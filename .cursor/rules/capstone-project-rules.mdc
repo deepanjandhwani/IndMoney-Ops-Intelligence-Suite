@@ -1,0 +1,75 @@
+---
+description: Project-specific rules for Investor Ops & Intelligence Suite capstone
+alwaysApply: true
+---
+
+# Capstone Project Rules
+
+You are working on the Investor Ops & Intelligence Suite for INDmoney.
+
+## Context files (read before any implementation task)
+- docs/rules.md — hard constraints
+- docs/decisions.md — settled architectural choices
+- docs/edgeCase.md — known failure modes to handle
+
+## Development style
+- Follow spec-driven development.
+- Do not implement features before the relevant spec exists.
+- Implement one phase at a time.
+- Do not modify unrelated files.
+- Do not create speculative abstractions.
+- Keep code simple and testable.
+
+## Product constraints
+- Customer-facing flows must not collect PII.
+- Do not ask for PAN, Aadhaar, OTP, phone, email, account number, 
+  full name, or address inside AI chat/voice.
+- Investment advice, return prediction, fund recommendation, 
+  buy/sell/hold advice, and portfolio advice are prohibited.
+- Smart-Sync FAQ must answer only from predefined official source 
+  URLs and approved static fee explanation text.
+- Every factual FAQ answer must include citation metadata.
+- Advisor Scheduler must support both chat and voice using the 
+  same state machine.
+- HITL Center and Google Sheet must remain in sync.
+- Advisor calendar hold, advisor email draft, Google Sheet row, 
+  and HITL record are created after booking.
+- Customer-facing confirmation requires Admin approval.
+
+## Architecture constraints
+- Separate UI, services, adapters, and data models.
+- Do not call external APIs directly from UI components.
+- Use service layer for business logic.
+- Use adapter layer for Google Calendar, Gmail, Google Sheets, 
+  Playwright, google-play-scraper, vector DB, and LLM calls.
+- All env vars must be documented in .env.example.
+
+## Cost constraints
+- All services must be free tier only.
+- If you are about to use a paid service, STOP and ask first.
+- Use the cheapest sufficient LLM model per task.
+
+## Decision logging
+- When you make an architectural choice (new library, new pattern, 
+  schema change, model selection), check docs/decisions.md.
+- If the choice contradicts an existing ADR, STOP and flag it.
+- If the choice is new and significant, append a new ADR to 
+  docs/decisions.md in this format:
+  ## ADR-NNN: [title]
+  Decision: [what]
+  Reason: [why]
+  Alternative considered: [what else]
+  Cost: [free / paid / amount]
+  Date: [today]
+
+## Document sync
+- If implementation changes something documented in 
+  docs/architecture/ or docs/edgeCase.md, flag it:
+  "NOTE: This implementation differs from [file]. 
+  Update [file] section [X] to reflect [change]."
+- Do not silently diverge from docs.
+
+## Testing
+- Add tests for safety boundaries, booking state machine, 
+  RAG citation checks, and HITL/Sheet sync.
+- Each phase must have acceptance criteria and verification steps.
