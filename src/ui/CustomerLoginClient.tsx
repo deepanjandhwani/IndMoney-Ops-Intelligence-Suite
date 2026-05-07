@@ -41,7 +41,18 @@ export function CustomerLoginClient() {
             display_name: trimmedName
           }, { onConflict: "id" });
         }
-        setSignupSuccess(true);
+        // Auto-sign-in after signup (DB trigger auto-confirms the email)
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password
+        });
+        if (signInError) {
+          setSignupSuccess(true);
+          return;
+        }
+        const next = searchParams.get("next") ?? "/customer/my-bookings";
+        router.push(next);
+        router.refresh();
         return;
       }
 
@@ -73,17 +84,17 @@ export function CustomerLoginClient() {
             className="text-2xl font-[520] tracking-[-0.02em]"
             style={{ fontFamily: "Georgia, 'Times New Roman', serif", color: "var(--ink-soft)" }}
           >
-            Check your email
+            Account Created
           </h1>
           <p className="text-sm text-muted mt-2">
-            We sent a confirmation link to <strong>{email}</strong>. Click it to activate your account, then sign in.
+            Your account has been created for <strong>{email}</strong>. Please sign in below.
           </p>
           <button
             type="button"
             onClick={() => { setSignupSuccess(false); setMode("login"); }}
             className="mt-4 !bg-accent !text-white !font-bold !px-5 !py-2.5 !rounded-full !text-sm hover:!opacity-90"
           >
-            Back to Sign In
+            Sign In
           </button>
         </div>
       </div>

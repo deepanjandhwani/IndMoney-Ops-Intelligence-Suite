@@ -79,6 +79,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  response.headers.set("Cache-Control", "no-store, max-age=0");
   return response;
 }
 
