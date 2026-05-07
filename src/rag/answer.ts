@@ -132,6 +132,7 @@ Rules:
 - Concise: max 6 bullets for ≤3 funds. For 4+ funds on the same attribute, use a markdown table.
 - No inline citations like "(source_id: …)" — UI shows sources separately. No "Last updated from sources" line.
 - Fee questions asking "What is [term]?" — start with a brief definition before fund-specific values.
+- If a fee question asks for BOTH a fund-specific value and why/how it is charged, answer the fund-specific value first, then the generic fee explanation.
 - Same source_id = one source. Don't say "confirmed by another source" for same-page chunks.
 - Same value appearing in multiple chunks → report once. Conflicting values → pick the most specific context, report only that.
 - Use exact fund names from chunks. Do not invent or modify names.

@@ -1,3 +1,5 @@
+import { Where } from "chromadb";
+
 import { bm25Rerank } from "./bm25";
 import { buildMetadataFilter } from "./classify";
 import { GeminiRagClient } from "./gemini";
@@ -42,6 +44,13 @@ export async function retrieveContext(input: {
       queryEmbedding,
       vectorStore: input.vectorStore,
       ranked
+    });
+    ranked = await pinMultiSourceFeeValueChunks({
+      queryEmbedding,
+      classification: input.classification,
+      vectorStore: input.vectorStore,
+      ranked,
+      topK
     });
     const matchedFunds = input.classification.matched_scheme_names ?? [];
     if (matchedFunds.length > 3) {
@@ -155,6 +164,123 @@ async function mergeFeeStaticChunksForMultiSource(input: {
   }
 
   return reranked;
+}
+
+async function pinMultiSourceFeeValueChunks(input: {
+  queryEmbedding: number[];
+  classification: QueryClassification;
+  vectorStore: VectorStore;
+  ranked: RetrievalCandidate[];
+  topK: number;
+}): Promise<RetrievalCandidate[]> {
+  const feeTopic = input.classification.extracted_topic ?? input.classification.extracted_fee_type;
+  if (feeTopic !== "expense_ratio" && feeTopic !== "exit_load") {
+    return input.ranked;
+  }
+
+  const matchedFunds = input.classification.extracted_scheme_name
+    ? [input.classification.extracted_scheme_name]
+    : input.classification.matched_scheme_names ?? [];
+  if (matchedFunds.length === 0) {
+    return input.ranked;
+  }
+
+  const pinned = bestFeeValueChunkPerFund(input.ranked, matchedFunds, feeTopic);
+  const pinnedFunds = new Set(
+    pinned
+      .map((candidate) => candidate.metadata.scheme_name)
+      .filter((schemeName): schemeName is string => Boolean(schemeName))
+  );
+  const missingFunds = matchedFunds.filter((fund) => !pinnedFunds.has(fund));
+
+  if (missingFunds.length > 0) {
+    const backfill = await input.vectorStore.query({
+      queryEmbedding: input.queryEmbedding,
+      where: feeValueBackfillFilter(missingFunds, feeTopic),
+      nResults: Math.max(4, missingFunds.length * 2)
+    });
+    pinned.push(...bestFeeValueChunkPerFund(backfill, missingFunds, feeTopic));
+  }
+
+  if (pinned.length === 0) {
+    return input.ranked;
+  }
+
+  const boostedPinned = pinned.map((candidate) => ({
+    ...candidate,
+    relevanceScore: Math.max(candidate.relevanceScore + 0.2, STRONG_RELEVANCE_FLOOR)
+  }));
+  const pinnedIds = new Set(boostedPinned.map((candidate) => candidate.id));
+  const merged = [
+    ...boostedPinned,
+    ...input.ranked.filter((candidate) => !pinnedIds.has(candidate.id))
+  ];
+
+  return merged.slice(0, Math.max(input.topK, MULTI_SOURCE_CONTEXT_RESULTS));
+}
+
+function bestFeeValueChunkPerFund(
+  candidates: RetrievalCandidate[],
+  matchedFunds: string[],
+  feeTopic: string
+): RetrievalCandidate[] {
+  return matchedFunds
+    .map((fund) => {
+      const matches = candidates
+        .filter((candidate) => candidateMatchesFeeValue(candidate, fund, feeTopic))
+        .sort((left, right) => feeValueScore(right, feeTopic) - feeValueScore(left, feeTopic));
+      return matches[0];
+    })
+    .filter((candidate): candidate is RetrievalCandidate => Boolean(candidate));
+}
+
+function candidateMatchesFeeValue(
+  candidate: RetrievalCandidate,
+  fund: string,
+  feeTopic: string
+) {
+  if (candidate.metadata.content_type !== "scheme_fact") return false;
+  if (candidate.metadata.scheme_name !== fund) return false;
+  return candidateContainsFeeTopic(candidate, feeTopic);
+}
+
+function candidateContainsFeeTopic(candidate: RetrievalCandidate, feeTopic: string) {
+  const terms = topicTermsFor(feeTopic);
+  const lowerText = candidate.text.toLowerCase();
+  return (
+    candidate.metadata.section_type === feeTopic ||
+    candidate.metadata.section_type === "fund_overview" ||
+    terms.some((term) => lowerText.includes(term))
+  );
+}
+
+function feeValueScore(candidate: RetrievalCandidate, feeTopic: string) {
+  let score = candidate.relevanceScore;
+  if (candidate.metadata.section_type === feeTopic) score += 0.3;
+  if (candidate.metadata.section_type === "fund_overview") score += 0.15;
+  if (topicTermsFor(feeTopic).some((term) => candidate.text.toLowerCase().includes(term))) {
+    score += 0.1;
+  }
+  return score;
+}
+
+function feeValueBackfillFilter(matchedFunds: string[], feeTopic: string): Where {
+  const schemeFilter: Where =
+    matchedFunds.length === 1
+      ? { scheme_name: matchedFunds[0] }
+      : { $or: matchedFunds.map((name) => ({ scheme_name: name })) };
+  const sectionFilter: Where =
+    feeTopic === "expense_ratio"
+      ? { $or: [{ section_type: "expense_ratio" }, { section_type: "fund_overview" }] }
+      : { section_type: feeTopic };
+
+  return {
+    $and: [
+      { content_type: "scheme_fact" },
+      schemeFilter,
+      sectionFilter
+    ]
+  };
 }
 
 async function ensureAllFundsRepresented(input: {
