@@ -8,7 +8,7 @@
 
 ## 1. Problem & goal
 
-Retail Groww users and support teams need an FAQ assistant that answers **factual** questions about HDFC mutual fund schemes from approved sources only — no advice, no PII, no hallucination. Today the assistant works for ~70% of factual queries but: (a) drops the fee explainer for canonical multi-source questions, (b) lets investment-advice phrasings slip to "no results", (c) misses M1 UI elements (welcome, examples, facts-only badge), (d) lacks help/regulatory corpus, (e) has fail-open safety on errors.
+Retail Groww users and support teams need an FAQ assistant that answers **factual** questions about HDFC mutual fund schemes from approved sources only — no advice, no PII, no hallucination. The current approved corpus is 31 Groww scheme pages plus the static fee explainer; help or regulatory sources must be added through the source manifest before the assistant can answer those process questions.
 
 **Goal**: deliver a robust, eval-passing FAQ that meets every M1 acceptance check and the [docs/evals.md](evals.md) gates (100% red-team, 100% PII, all 5 goldens green) before grading.
 
@@ -66,9 +66,9 @@ Retail Groww users and support teams need an FAQ assistant that answers **factua
 
 **US-5.1** As a customer, I want help with how to download a capital-gains statement, update nominee, etc.
 
-- AC: `process_help` filter widened to `$or [help_page, regulatory_education]`.
-- AC: Manifest contains ≥ 5 new entries: SEBI riskometer, AMFI ELSS lock-in, AMFI exit load, Groww capital-gains statement, Groww nominee help.
-- AC: Each step-style help answer includes the source URL with last_checked.
+- AC: Process and regulatory answers are allowed only after the relevant approved `help_page` or `regulatory_education` sources are added to `config/source_urls.json`.
+- AC: Until those sources exist, process questions return an honest no-results response instead of relying on runtime web search.
+- AC: Each step-style help answer includes the source URL with `last_checked` once the source exists in the manifest.
 
 ### Epic E6 — Conversation memory & pronouns
 
@@ -228,12 +228,12 @@ Format: `# | Query | Expected behavior | Status | Risk it might break | Mitigati
 | 24 | Why is brokerage fee charged on HDFC Banking & Financial Services Fund? | multi_source; `src_014` + fee section "Brokerage fees" | |
 | 25 | What is expense ratio of HDFC Infrastructure Fund and how is it deducted? | multi_source; `src_011` + fee_static_001 | |
 
-### D. Process / help (26–28) — after corpus expansion D1
+### D. Process / help (26–28) — future corpus expansion
 
 | # | Query | Expected |
 |---|---|---|
-| 26 | How do I download a capital-gains statement? | `process_help`; cite Groww help URL with steps |
-| 27 | How do I update my nominee on Groww? | `process_help`; cite Groww nominee help |
+| 26 | How do I download a capital-gains statement? | no-results until an approved Groww help URL is added |
+| 27 | How do I update my nominee on Groww? | no-results until an approved Groww nominee help URL is added |
 | 28 | How can I redeem units from HDFC Mid-Cap Fund? | `process_help` if Groww redemption guide added; otherwise honest no_results |
 
 ### E. Conversation flow / pronouns (29–35)
@@ -244,7 +244,7 @@ Format: `# | Query | Expected behavior | Status | Risk it might break | Mitigati
 | 30 | T1: "Expense ratio of HDFC Mid-Cap Fund?" T2: "What about its exit load?" | T2 rewrite → keeps fund, switches topic to exit_load; answered |
 | 31 | T1: "AUM of HDFC Pharma fund?" T2: "Compare it with the previous one." | "previous" triggers rewrite using turn before T1; if no prior fund, ambiguous → clarification |
 | 32 | T1: "Exit load on HDFC Small Cap?" T2: "Why is that charged?" | T2 multi_source; both citations |
-| 33 | T1: "Lock-in for HDFC Mid-Cap?" T2: "What about ELSS in general?" | T2 regulatory_education; cite AMFI ELSS page |
+| 33 | T1: "Lock-in for HDFC Mid-Cap?" T2: "What about ELSS in general?" | T2 answers only if an approved ELSS source is present; otherwise honest no_results |
 | 34 | T1: "Benchmark of HDFC Defence Fund?" T2: "And the riskometer?" | T2 keeps fund context, topic=riskometer; answered |
 | 35 | T1: "Tell me about HDFC Transportation Fund." T2: "Show me the same fund's expense ratio." | T2 "the same" → rewrite to fund + topic; scheme_fact answered |
 
@@ -310,8 +310,8 @@ Format: `# | Query | Expected behavior | Status | Risk it might break | Mitigati
 - [ ] M1.md updated to remove "≤3 sentences" / "3-5 schemes" / "Last updated from sources: <date>" tensions.
 - [ ] Customer FAQ surface visually verified: welcome + 3 examples + facts-only badge present.
 - [ ] `SAFETY_REFUSAL` includes SEBI educational link; tested in `rag-faq.test.ts`.
-- [ ] Manifest expanded to ≥ 15 entries with at least 1 `regulatory_education` and 1 `help_page`.
-- [ ] CI: `npm test` green; `npm run phase3:ingest` runs in < 30s on 20 sources.
+- [ ] Manifest contains the current approved corpus: 31 `scheme_fact` entries plus `fee_static_001`.
+- [ ] CI: `npm test` green; `npm run phase3:ingest` runs successfully on the approved manifest.
 
 ---
 

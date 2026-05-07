@@ -290,7 +290,7 @@ export function HitlApprovalClient() {
                     </span>
                   </div>
 
-                  <div className="grid sm:grid-cols-4 gap-3 text-sm">
+                  <div className="grid sm:grid-cols-3 gap-3 text-sm">
                     <div>
                       <span className="text-xs text-muted block">Topic</span>
                       <span className="font-semibold text-foreground">{payload.topic as string ?? "—"}</span>
@@ -300,10 +300,6 @@ export function HitlApprovalClient() {
                       <span className="font-semibold text-foreground">
                         {payload.slot_label as string ?? payload.slot_start as string ?? "—"}
                       </span>
-                    </div>
-                    <div>
-                      <span className="text-xs text-muted block">Input Mode</span>
-                      <span className="font-semibold text-foreground">{payload.input_mode as string ?? "—"}</span>
                     </div>
                     <div>
                       <span className="text-xs text-muted block">Created</span>
@@ -391,8 +387,8 @@ export function HitlApprovalClient() {
                     const customerDraft = preview?.customer as Record<string, string> | undefined;
 
                     return (
-                      <div className="space-y-2">
-                        <div className="flex flex-wrap gap-2">
+                      <div className="space-y-3">
+                        <div className="flex flex-wrap gap-3">
                           <button
                             type="button"
                             onClick={() => {
@@ -402,9 +398,9 @@ export function HitlApprovalClient() {
                                 [action.id]: currentPreview === "advisor" ? null : "advisor"
                               }));
                             }}
-                            className="!bg-transparent !p-0 !text-xs !font-semibold !text-accent hover:!text-accent/80 !shadow-none flex items-center gap-1"
+                            className="!bg-card-soft !border !border-border hover:!border-accent/50 !text-foreground !font-bold !px-4 !py-2.5 !rounded-xl !text-sm !shadow-none flex items-center gap-2 transition-colors"
                           >
-                            <Mail className="w-3 h-3" />
+                            <Mail className="w-4 h-4 text-accent" />
                             {currentPreview === "advisor" ? "Hide" : "Preview"} Advisor Email
                           </button>
                           <button
@@ -416,10 +412,10 @@ export function HitlApprovalClient() {
                                 [action.id]: currentPreview === "customer" ? null : "customer"
                               }));
                             }}
-                            className="!bg-transparent !p-0 !text-xs !font-semibold !text-accent hover:!text-accent/80 !shadow-none flex items-center gap-1"
+                            className="!bg-card-soft !border !border-border hover:!border-accent/50 !text-foreground !font-bold !px-4 !py-2.5 !rounded-xl !text-sm !shadow-none flex items-center gap-2 transition-colors"
                           >
-                            <Mail className="w-3 h-3" />
-                            {currentPreview === "customer" ? "Hide" : "Preview"} Customer Email
+                            <Mail className="w-4 h-4 text-accent" />
+                            {currentPreview === "customer" ? "Hide" : "Preview"} User Email
                           </button>
                         </div>
 
@@ -429,13 +425,13 @@ export function HitlApprovalClient() {
                               initial={{ opacity: 0, height: 0 }}
                               animate={{ opacity: 1, height: "auto" }}
                               exit={{ opacity: 0, height: 0 }}
-                              className="bg-card-soft border border-border rounded-xl p-3 text-sm space-y-1"
+                              className="bg-card-soft border border-border rounded-xl p-4 text-sm space-y-3"
                             >
                               {currentPreview === "advisor" && advisorDraft && (
                                 <>
-                                  <div><span className="text-xs text-muted">To:</span> <span className="font-semibold">{advisorDraft.to}</span></div>
-                                  <div><span className="text-xs text-muted">Subject:</span> <span className="font-semibold">{advisorDraft.subject}</span></div>
-                                  <pre className="text-xs text-muted whitespace-pre-wrap mt-2">{advisorDraft.body}</pre>
+                                  <div><span className="text-xs font-bold uppercase tracking-wide text-muted">To:</span> <span className="font-semibold text-foreground">{advisorDraft.to}</span></div>
+                                  <div><span className="text-xs font-bold uppercase tracking-wide text-muted">Subject:</span> <span className="font-semibold text-foreground">{advisorDraft.subject}</span></div>
+                                  <pre className="text-sm leading-6 text-foreground/80 whitespace-pre-wrap bg-card border border-border/60 rounded-lg p-3 max-h-80 overflow-auto">{advisorDraft.body}</pre>
                                 </>
                               )}
                               {currentPreview === "advisor" && !advisorDraft && (
@@ -443,9 +439,9 @@ export function HitlApprovalClient() {
                               )}
                               {currentPreview === "customer" && customerDraft && (
                                 <>
-                                  <div><span className="text-xs text-muted">To:</span> <span className="font-semibold">{customerDraft.to}</span></div>
-                                  <div><span className="text-xs text-muted">Subject:</span> <span className="font-semibold">{customerDraft.subject}</span></div>
-                                  <pre className="text-xs text-muted whitespace-pre-wrap mt-2">{customerDraft.body}</pre>
+                                  <div><span className="text-xs font-bold uppercase tracking-wide text-muted">To:</span> <span className="font-semibold text-foreground">{customerDraft.to}</span></div>
+                                  <div><span className="text-xs font-bold uppercase tracking-wide text-muted">Subject:</span> <span className="font-semibold text-foreground">{customerDraft.subject}</span></div>
+                                  <pre className="text-sm leading-6 text-foreground/80 whitespace-pre-wrap bg-card border border-border/60 rounded-lg p-3 max-h-80 overflow-auto">{customerDraft.body}</pre>
                                 </>
                               )}
                               {currentPreview === "customer" && !customerDraft && (

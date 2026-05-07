@@ -8,7 +8,7 @@ A unified AI-powered web application for Groww that connects Google Play Store r
 |---|---|---|
 | **A — Review Intelligence** | Weekly Google Play review ingestion, BERTopic clustering, Review Pulse generation | Admin |
 | **B — Review Trends** | Week-over-week trend metrics (volume, rating, sentiment, theme share) | Admin |
-| **C — Smart-Sync FAQ** | RAG-powered facts-only FAQ from ~15 predefined official URLs + static fee explainer | Customer, Admin (preview) |
+| **C — Smart-Sync FAQ** | RAG-powered facts-only FAQ from 31 predefined Groww scheme URLs + static fee explainer | Customer, Admin (preview) |
 | **D — Advisor Scheduler** | Chat + voice booking via shared state machine, Deepgram STT/TTS, theme-aware greeting | Customer, Admin (preview) |
 | **E — HITL Approval Center** | Admin approval for customer-facing confirmation, Calendar/Sheet/Email sync | Admin |
 | **F — Evaluation Suite** | Retrieval accuracy, safety, PII, integration, and cost evals | Admin |
@@ -32,7 +32,7 @@ A unified AI-powered web application for Groww that connects Google Play Store r
 - Python 3.11+ (for clustering pipeline and FastMCP server)
 - ChromaDB running locally or as a sidecar (`npm run chroma:local`)
 - Gemini API key (free via Google AI Studio)
-- Supabase project (free tier) — optional, SQLite fallback available for chat history
+- Supabase project (free tier) for reviews, bookings, HITL, and auth; chat history can fall back to SQLite locally
 - Google Cloud project with Calendar, Sheets, Gmail APIs enabled (free OAuth)
 - Deepgram account ($200 signup credits) — optional, Web Speech API fallback available
 
@@ -79,8 +79,9 @@ npm run dev
 
 7. **Open the app:**
 
-- Customer view: [http://localhost:3000/customer/faq](http://localhost:3000/customer/faq)
-- Admin view: [http://localhost:3000/admin](http://localhost:3000/admin)
+- Application home: [https://groww-ops-intelligence-suite.vercel.app/](https://groww-ops-intelligence-suite.vercel.app/)
+- Customer view: [https://groww-ops-intelligence-suite.vercel.app/customer/faq](https://groww-ops-intelligence-suite.vercel.app/customer/faq)
+- Admin view: [https://groww-ops-intelligence-suite.vercel.app/admin](https://groww-ops-intelligence-suite.vercel.app/admin)
 
 ## Using the Platform
 
@@ -94,7 +95,7 @@ npm run dev
 
 ### Admin Side
 
-1. Navigate to [/admin](http://localhost:3000/admin) or any admin page.
+1. Navigate to [https://groww-ops-intelligence-suite.vercel.app/admin](https://groww-ops-intelligence-suite.vercel.app/admin) or any admin page.
 2. Sign in with the pre-configured admin credentials:
    - **Email:** `admin@gmail.com`
    - **Password:** `admin1`
@@ -117,6 +118,8 @@ npm run phase4:oauth-login
 
 See `docs/architecture/mcpIntegration.md` Section 1.2 for full details.
 
+For production, the Next.js app talks to the FastMCP Google sidecar over `MCP_SERVER_URL`. The current deployment target is Railway for the MCP server, with real Google Calendar, Google Sheets, and Gmail draft integrations. The app does not use mock calendar, notes, or draft adapters.
+
 ## Environment Variables
 
 All variables are documented in `.env.example`. Key groups:
@@ -124,7 +127,7 @@ All variables are documented in `.env.example`. Key groups:
 | Group | Variables | Required |
 |---|---|---|
 | Gemini | `GEMINI_API_KEY`, model names | Yes |
-| Supabase | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | No (SQLite fallback) |
+| Supabase | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Yes for full reviews/bookings/HITL; chat history has SQLite fallback |
 | ChromaDB | `CHROMA_URL`, `CHROMA_COLLECTION` | Yes (for FAQ) |
 | FastMCP | `MCP_SERVER_URL`, Google OAuth paths | Yes (for scheduler integrations) |
 | Deepgram | `DEEPGRAM_API_KEY` | No (Web Speech API fallback) |
@@ -208,6 +211,7 @@ See `docs/decisions.md` for the full ADR log. Highlights:
 | System Rules | `docs/rules.md` |
 | Edge Cases | `docs/edgeCase.md` |
 | Evaluation Suite | `docs/evals.md` |
+| Repository Hygiene | `docs/unwanted-files.md` |
 | RAG Architecture | `docs/architecture/ragA.md` |
 | Voice Agent | `docs/architecture/voiceAgent.md` |
 | MCP Integration | `docs/architecture/mcpIntegration.md` |
@@ -268,3 +272,7 @@ All services run on free tiers or credit-limited free credits. No paid service i
 | GitHub Actions | Free (2,000 min/month private, unlimited public) |
 | Deepgram | $200 signup credits (credit-limited) |
 | Groq | Free tier |
+
+## Repository Hygiene
+
+Generated runtime data, local credentials, caches, and deployment metadata are not required for source review or grading. Keep them out of commits; see `docs/unwanted-files.md` for the full cleanup list.

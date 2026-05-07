@@ -55,7 +55,7 @@ flowchart TD
 
 ### Module C — Smart-Sync Knowledge Base (FAQ)
 
-- **Inputs:** Customer question (text), conversation history (last 4 turns for pronoun resolution), selected fund filters (fund type, risk profile, fund names), ~15 predefined official URLs (scraped via Playwright), static fee explainer text
+- **Inputs:** Customer question (text), conversation history (last 4 turns for pronoun resolution), selected fund filters (fund type, risk profile, fund names), 31 predefined Groww scheme URLs (scraped via Playwright), static fee explainer text
 - **Outputs:** Facts-only answer with source citations and last-checked date, max 6 bullets, updated session context (active_fund, last_topic, recent_funds)
 - **Key features:**
   - LLM-powered query rewriting resolves pronouns ("this fund", "its", "that") before embedding and classification (See ADR-020)
@@ -207,7 +207,7 @@ sequenceDiagram
 
 ### 5.1 App DB — Supabase Free Tier (Postgres) (See ADR-011)
 
-All Phase 1 `public` tables have RLS enabled. Until role-specific access policies are implemented in later phases, `anon` and `authenticated` roles are explicitly denied; backend services use server-side credentials only.
+All `public` tables have RLS enabled. Admin/internal review, booking, and HITL operations use server-side credentials, while customer auth policies scope customer-visible data such as profiles, chat history, and My Bookings records to the signed-in user.
 
 **`reviews`**
 
@@ -379,7 +379,7 @@ ChromaDB runs locally as the selected free vector DB for the capstone demo. For 
 
 **Collection: `smart-sync-kb`**
 
-Single collection with metadata-based partitioning. Stores all chunks — scheme factsheets (~15 predefined official URLs scraped via Playwright), static fee explainer, regulatory education pages, and help pages. Chunk types are distinguished via `content_type` metadata field, not separate collections.
+Single collection with metadata-based partitioning. The current approved corpus stores 31 Groww scheme-page chunks plus the static fee explainer. The metadata model also supports future approved `regulatory_education` and `help_page` sources, but the live source manifest should remain the source of truth. Chunk types are distinguished via `content_type` metadata field, not separate collections.
 
 Metadata per document:
 
@@ -388,10 +388,10 @@ Metadata per document:
   "source_id": "src_001",
   "source_type": "official_url",
   "content_type": "scheme_fact",
-  "title": "Official Scheme Factsheet",
-  "url": "https://official-source-url.com",
-  "last_checked": "2026-04-26",
-  "scheme_name": "Axis ELSS Fund",
+  "title": "HDFC Defence Fund Direct Growth",
+  "url": "https://groww.in/mutual-funds/hdfc-defence-fund-direct-growth",
+  "last_checked": "2026-05-01",
+  "scheme_name": "HDFC Defence Fund Direct Growth",
   "fund_type": "sectoral",
   "risk_category": "Very High Risk",
   "section_type": "exit_load",
@@ -407,10 +407,10 @@ The `fund_type` and `risk_category` fields (See ADR-021) are sourced from `confi
 
 The `content_type` field partitions the collection:
 
-- `scheme_fact` — scheme factsheet chunks (exit load, expense ratio, lock-in, etc.)
+- `scheme_fact` — Groww scheme-page chunks (exit load, expense ratio, lock-in, etc.)
 - `fee_explanation` — static fee explainer chunks
-- `regulatory_education` — AMFI/SEBI educational content
-- `help_page` — process/how-to pages
+- `regulatory_education` — reserved for approved AMFI/SEBI educational content if added later
+- `help_page` — reserved for approved process/how-to pages if added later
 
 Retrieval filters by `content_type` (and optional fields like `scheme_name`, `fee_type`, `topic`) using ChromaDB `where` clauses. Multi-hop queries use `$or` filters across content types in a single pass. See `docs/architecture/ragA.md` Section 3 for full collection design and query patterns.
 

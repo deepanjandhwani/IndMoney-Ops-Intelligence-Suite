@@ -20,8 +20,8 @@
 ### 1.2 Evaluation Criteria for This Corpus
 
 **Corpus profile:**
-- ~15 scraped URLs (scheme factsheets, SIDs, AMFI/SEBI pages, help pages)
-- 1 static fee explainer document
+- 31 scraped Groww scheme page URLs from `config/source_urls.json`
+- 1 static fee explainer document from `config/static_fee_explainer.md`
 - Estimated total: ~200–400 chunks
 - Queries: English with occasional Hindi terms (e.g., "exit load kya hai")
 - Ingestion is one-time + periodic re-scrape, not continuous
@@ -889,7 +889,7 @@ const SAFETY_REFUSAL =
 ```
 Source Manifest (config/source_urls.json)
     ↓
-Playwright Scraper (fetch HTML from ~15 URLs)
+Playwright Scraper (fetch HTML from 31 approved Groww scheme URLs)
     ↓
 Content Parser (extract text, detect sections)
     ↓
@@ -909,11 +909,14 @@ The automated refresh is `.github/workflows/rag_refresh.yml`. It runs daily at 1
 ```
 src/rag/
 ├── ingest.ts        # Orchestrates full ingestion pipeline
+├── scrape.ts        # Playwright source scraper
 ├── chunk.ts         # Content-aware chunking logic (token-aware caps)
 ├── gemini.ts        # Gemini embedding + classify/generate/safety adapter
 ├── retrieve.ts      # Hybrid retrieval (vector + BM25 rerank, cross-domain second hop)
+├── bm25.ts          # Local keyword reranker
 ├── faq.ts           # End-to-end FAQ orchestration (classify → retrieve → generate → safety)
 ├── classify.ts      # Query classification + metadata filter builder
+├── fund-resolver.ts # Fund alias / typo resolution
 ├── safety.ts        # Pre/post-generation safety guardrails
 ├── answer.ts        # Cited-answer generation + post-gen safety call
 ├── citations.ts     # Citation assembly + required-citation enforcement

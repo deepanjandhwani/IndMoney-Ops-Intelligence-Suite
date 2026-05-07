@@ -57,3 +57,4 @@ All URLs follow the pattern `https://groww.in/mutual-funds/hdfc-*-direct-growth`
 - The static fee explainer is loaded directly from the filesystem during ingestion.
 - Sources are refreshed daily via GitHub Actions (`.github/workflows/rag_refresh.yml`).
 - The canonical machine-readable manifest is at `config/source_urls.json`.
+- The current approved corpus contains scheme facts and the static fee explainer only. Add any future help or regulatory source to `config/source_urls.json` before allowing the FAQ to answer from it.

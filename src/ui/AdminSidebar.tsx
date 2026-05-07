@@ -27,6 +27,8 @@ export function AdminSidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [collapsed, setCollapsed] = useState(true);
+  const [userName, setUserName] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 768px)");
@@ -35,6 +37,53 @@ export function AdminSidebar() {
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    try {
+      const supabase = createSupabaseBrowserClient();
+      supabase.auth.getUser().then(async ({ data }) => {
+        if (cancelled) return;
+        const user = data.user;
+        if (!user) {
+          setUserName(null);
+          setUserEmail(null);
+          return;
+        }
+
+        setUserEmail(user.email ?? null);
+        const metaName = user.user_metadata?.display_name;
+        if (metaName) {
+          setUserName(metaName);
+          return;
+        }
+
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("display_name")
+          .eq("id", user.id)
+          .single();
+        if (!cancelled) setUserName(profile?.display_name ?? null);
+      });
+    } catch {
+      /* Supabase env vars may not be set */
+    }
+    return () => { cancelled = true; };
+  }, [pathname]);
+
+  async function handleSignOut() {
+    try {
+      const supabase = createSupabaseBrowserClient();
+      await supabase.auth.signOut();
+    } catch { /* ignore */ }
+    setUserName(null);
+    setUserEmail(null);
+    router.push("/admin/login");
+    router.refresh();
+  }
+
+  const displayLabel = userName || userEmail || "Admin";
+  const initial = displayLabel.charAt(0).toUpperCase();
 
   return (
     <aside
@@ -96,21 +145,41 @@ export function AdminSidebar() {
           <Home className="w-3.5 h-3.5" />
           {!collapsed && "Back to Home"}
         </Link>
-        <button
-          type="button"
-          onClick={async () => {
-            try {
-              const supabase = createSupabaseBrowserClient();
-              await supabase.auth.signOut();
-            } catch { /* ignore */ }
-            router.push("/admin/login");
-            router.refresh();
-          }}
-          className={`flex items-center gap-2 text-xs font-semibold text-muted hover:text-danger transition-colors !bg-transparent !shadow-none !p-0 w-full ${collapsed ? "justify-center" : ""}`}
-        >
-          <LogOut className="w-3.5 h-3.5" />
-          {!collapsed && "Sign Out"}
-        </button>
+
+        <div className={`rounded-xl border border-border bg-card-soft p-2 ${collapsed ? "flex flex-col items-center gap-2" : "space-y-2"}`}>
+          <div className={`flex items-center gap-2 min-w-0 ${collapsed ? "justify-center" : ""}`}>
+            <div
+              className="w-8 h-8 rounded-full bg-accent/15 text-accent flex items-center justify-center text-xs font-bold shrink-0"
+              title={displayLabel}
+            >
+              {initial}
+            </div>
+            {!collapsed && (
+              <div className="min-w-0">
+                <p className="text-xs font-bold truncate" style={{ color: "var(--ink-soft)" }}>
+                  {displayLabel}
+                </p>
+                {userEmail && userEmail !== displayLabel && (
+                  <p className="text-[0.68rem] text-muted truncate">{userEmail}</p>
+                )}
+              </div>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={handleSignOut}
+            className={`!bg-danger/10 !text-danger hover:!bg-danger/20 !shadow-none !rounded-lg font-bold transition-colors ${
+              collapsed
+                ? "!p-2"
+                : "w-full !px-3 !py-2 text-xs flex items-center justify-center gap-2"
+            }`}
+            title="Sign Out"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            {!collapsed && "Logout"}
+          </button>
+        </div>
       </div>
     </aside>
   );

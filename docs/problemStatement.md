@@ -22,7 +22,7 @@ The Investor Ops & Intelligence Suite for Groww is a unified AI-powered customer
 - Customer FAQ support
 - Chat + voice advisor scheduling
 - Advisor calendar workflow
-- Google Sheet / Notes tracking
+- Google Sheets tracking
 - Advisor email draft creation
 - Human-in-the-loop review and confirmation
 - Evaluation and safety checks
@@ -74,7 +74,7 @@ The system should use Groww as the product context for:
 - Advisor scheduling
 - Advisor email draft market/product context
 
-For mutual fund facts, the system will use a predefined list of approximately 15 official source URLs supplied by the project owner.
+For mutual fund facts, the system uses the approved source manifest: 31 predefined Groww scheme page URLs plus one static fee explainer source.
 
 For fee-related explanations, the system will use static approved fee explanation text supplied by the project owner.
 
@@ -431,7 +431,7 @@ The Admin user should be able to view:
 
 Build a customer-facing facts-only FAQ assistant that answers mutual fund scheme, fee, and process questions using:
 
-1. A predefined set of approximately 15 official source URLs supplied by the project owner
+1. A predefined set of 31 approved Groww scheme page URLs from the source manifest
 2. Static fee explanation text supplied by the project owner
 3. Source metadata stored in the RAG database
 
@@ -439,7 +439,7 @@ The assistant must not provide investment advice, fund recommendations, return p
 
 ### 9.2 Source Ingestion Design
 
-The project owner will provide approximately 15 predefined official URLs.
+The current source manifest contains 31 predefined Groww scheme page URLs.
 
 These URLs may include:
 
@@ -456,7 +456,7 @@ The app should use a Playwright scraper to scrape or ingest these predefined URL
 
 The URLs should be stored in a source manifest.
 
-Suggested file: `docs/source_manifest.md` or `config/source_urls.json`
+Canonical files: `config/source_urls.json` for machine-readable ingestion and `docs/source-manifest.md` for human-readable documentation.
 
 ### 9.3 Fee Explanation Source
 
@@ -464,11 +464,11 @@ Fee-related explanation logic will be provided as static text by the project own
 
 This static fee text should be treated as an approved internal explainer source and stored/indexed alongside the RAG corpus.
 
-Suggested file: `data/static_fee_explainer.md` or `config/static_fee_explainer.md`
+Canonical file: `config/static_fee_explainer.md`
 
 The Smart-Sync FAQ should combine:
 
-- Scheme-specific facts from the 15 predefined URLs
+- Scheme-specific facts from the 31 predefined Groww scheme URLs
 - Static fee explanation logic
 - Official source citations from the source manifest
 
@@ -478,7 +478,7 @@ Where factual claims rely on official source content, the answer must cite the r
 
 The RAG database should contain chunks from:
 
-- The 15 predefined official URLs scraped using Playwright
+- The 31 predefined Groww scheme URLs scraped using Playwright
 - Static fee explanation text
 
 Each chunk should store metadata.
@@ -674,7 +674,7 @@ The booking code must be visible in:
 
 - Customer booking confirmation
 - Advisor calendar hold title
-- Google Sheet/Notes entry
+- Google Sheet row
 - Advisor email draft
 - HITL Approval Center action payloads
 
@@ -760,7 +760,7 @@ When the advisor scheduling conversation ends, the system should immediately gen
 
 1. A confirmed internal booking object with a unique booking code
 2. An advisor calendar hold
-3. A Google Sheet/Notes entry
+3. A Google Sheet row
 4. An advisor email draft
 5. A HITL Center record
 
@@ -852,7 +852,7 @@ Customer-facing calendar/email confirmation is handled only after secure details
 }
 ```
 
-### 11.8 Google Sheet / Notes Entry Behavior
+### 11.8 Google Sheet Row Behavior
 
 **After the advisor conversation ends:**
 
@@ -860,7 +860,7 @@ Customer-facing calendar/email confirmation is handled only after secure details
 - A corresponding HITL Center record is created
 - The status should initially be `advisor_hold_created` or `pending_admin_confirmation`
 
-**Example Google Sheet/Notes entry:**
+**Example Google Sheet row:**
 
 ```json
 {
@@ -1116,7 +1116,7 @@ The system should use actual connections for:
 - Advisor calendar hold creation after booking
 - Google Sheet row creation/update
 - Advisor email draft creation after booking
-- RAG source ingestion from the 15 predefined URLs using Playwright
+- RAG source ingestion from the 31 predefined Groww scheme URLs using Playwright
 
 ### 14.2 Scheduled Review Ingestion
 
@@ -1126,7 +1126,7 @@ The selected GitHub Actions workflow must be documented in the README.
 
 ### 14.3 Predefined Source URLs
 
-The RAG knowledge base should be built from approximately 15 predefined URLs supplied by the project owner.
+The RAG knowledge base is built from the approved source manifest: 31 predefined Groww scheme URLs plus the approved static fee explainer.
 
 The system should not perform broad web search at runtime for mutual fund answers.
 
@@ -1184,7 +1184,7 @@ The booking code generated by the Scheduler must be visible in:
 
 - Customer booking confirmation
 - Advisor calendar hold title
-- Google Sheet/Notes entry
+- Google Sheet row
 - Advisor email draft
 - HITL Center payload
 
@@ -1203,7 +1203,7 @@ The repository should include:
 - Phase-wise development specifications
 - Google Play review ingestion config
 - GitHub Actions scheduled ingestion workflow
-- 15-source RAG URL config or manifest
+- 31-source RAG URL config or manifest
 - Static fee explainer file
 - Prompt files
 - Evaluation report
@@ -1233,7 +1233,7 @@ Create a 5-minute demo video showing:
 
 ### 15.3 Evaluation Report
 
-Suggested file: `evals/evaluation_report.md`
+Canonical files: `evals/phase3-report.json` for the Admin Evaluation Suite and `evals/REPORT.md` for the generated Markdown report.
 
 The report should include:
 
@@ -1250,9 +1250,9 @@ The report should include:
 
 ### 15.4 Source Manifest
 
-Suggested file: `docs/source_manifest.md`
+Human-readable file: `docs/source-manifest.md`
 
-The manifest should include the 15 predefined official URLs with:
+The manifest should include the 31 predefined Groww scheme URLs with:
 
 - Source title
 - Official URL
@@ -1280,7 +1280,7 @@ The final capstone is successful if:
 11. Advisor Scheduler supports both chat and voice.
 12. Scheduler supports book, reschedule, cancel, what-to-prepare, and check-availability intents.
 13. Topic is collected only for booking/reschedule flows or where availability filtering requires it.
-14. Smart-Sync FAQ uses the 15 predefined source URLs scraped through Playwright.
+14. Smart-Sync FAQ uses the 31 predefined Groww scheme URLs scraped through Playwright.
 15. Fee explanation uses approved static fee text.
 16. Smart-Sync FAQ combines scheme facts and fee explanation logic.
 17. Every factual FAQ answer includes official citations where relevant.

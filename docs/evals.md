@@ -3,7 +3,7 @@
 > Module F — Proves the integrated system works across retrieval, safety, UX, integration, Review Pulse, voice, and cost behavior.
 > References: problemStatement.md §13, rules.md, architecture/ragA.md, edgeCase.md
 
-**Golden retrieval note:** Section 1 questions are aligned to the approved sources in [`config/source_urls.json`](../config/source_urls.json) (14 `scheme_fact` Groww scheme pages: `src_001`–`src_014`) plus the fee explainer source **`fee_static_001`** ([`config/static_fee_explainer.md`](../config/static_fee_explainer.md)). Questions use explicit scheme names so retrieval can target the intended scheme context.
+**Golden retrieval note:** Section 1 questions are aligned to the approved sources in [`config/source_urls.json`](../config/source_urls.json) (31 `scheme_fact` Groww scheme pages: `src_001`–`src_031`) plus the fee explainer source **`fee_static_001`** ([`config/static_fee_explainer.md`](../config/static_fee_explainer.md)). The current golden set samples representative scheme IDs (`src_001`, `src_002`, `src_006`, `src_013`, `src_014`) and uses explicit scheme names so retrieval can target the intended scheme context.
 
 ---
 
