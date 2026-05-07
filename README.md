@@ -97,7 +97,7 @@ npm run dev
 1. Navigate to [/admin](http://localhost:3000/admin) or any admin page.
 2. Sign in with the pre-configured admin credentials:
    - **Email:** `admin@gmail.com`
-   - **Password:** `admin`
+   - **Password:** `admin1`
 3. The admin dashboard gives access to Review Pulse, Trends, HITL Centre, and Evaluations.
 
 ## Google OAuth Setup

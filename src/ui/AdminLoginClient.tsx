@@ -6,7 +6,7 @@ import { ShieldCheck, AlertCircle } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/adapters/supabase/browser-client";
 
 const HARDCODED_ADMIN_EMAIL = "admin@gmail.com";
-const HARDCODED_ADMIN_PASSWORD = "admin";
+const HARDCODED_ADMIN_PASSWORD = "admin1";
 
 export function AdminLoginClient() {
   const router = useRouter();
