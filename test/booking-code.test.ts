@@ -63,6 +63,14 @@ describe("parseBookingCodeFromLooseInput (voice / STT)", () => {
     expect(parseBookingCodeFromLooseInput("my code is NL A742 please")).toBe("NL-A742");
   });
 
+  it("parses spoken digit words", () => {
+    expect(parseBookingCodeFromLooseInput("A J dash C two one six.")).toBe("AJ-C216");
+  });
+
+  it("parses phonetic letter words", () => {
+    expect(parseBookingCodeFromLooseInput("alpha jay dash sea seven forty two")).toBe("AJ-C742");
+  });
+
   it("returns null for garbage", () => {
     expect(parseBookingCodeFromLooseInput("hello there")).toBeNull();
   });

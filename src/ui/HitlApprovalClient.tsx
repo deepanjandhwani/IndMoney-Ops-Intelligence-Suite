@@ -30,9 +30,7 @@ type FilterTab = "all" | HitlStatus;
 
 const TABS: { key: FilterTab; label: string }[] = [
   { key: "all", label: "All" },
-  { key: "pending", label: "Pending" },
-  { key: "approved", label: "Approved" },
-  { key: "rejected", label: "Rejected" }
+  { key: "pending", label: "Pending" }
 ];
 
 const statusStyles: Record<string, { bg: string; text: string; icon: typeof Clock }> = {
@@ -70,7 +68,6 @@ export function HitlApprovalClient() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterTab>("pending");
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [adminNotes, setAdminNotes] = useState<Record<string, string>>({});
   const [marketThemes, setMarketThemes] = useState<string[]>([]);
   const [customerDetails, setCustomerDetails] = useState<Record<string, CustomerDetails>>({});
   const [attendeeLoading, setAttendeeLoading] = useState<Record<string, boolean>>({});
@@ -182,34 +179,10 @@ export function HitlApprovalClient() {
     }
   }, [actions]);
 
-  async function decide(actionId: string, decision: "approve" | "reject") {
-    setMessage(null);
-    setError(null);
-    const response = await fetch("/api/admin/hitl", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action_id: actionId,
-        decision,
-        admin_notes: adminNotes[actionId] || undefined
-      })
-    });
-    const data = (await response.json()) as { error?: string };
-    if (!response.ok) {
-      setError(data.error ?? "HITL action failed.");
-      return;
-    }
-    setMessage(`Action ${decision === "approve" ? "approved" : "rejected"} and synced.`);
-    setAdminNotes((prev) => { const n = { ...prev }; delete n[actionId]; return n; });
-    await loadActions();
-  }
-
   const filtered = filter === "all" ? actions : actions.filter((a) => a.status === filter);
   const counts = {
     all: actions.length,
-    pending: actions.filter((a) => a.status === "pending").length,
-    approved: actions.filter((a) => a.status === "approved").length,
-    rejected: actions.filter((a) => a.status === "rejected").length
+    pending: actions.filter((a) => a.status === "pending").length
   };
 
   return (
@@ -539,36 +512,6 @@ export function HitlApprovalClient() {
                     )}
                   </AnimatePresence>
 
-                  {action.status === "pending" && (
-                    <div className="flex items-end gap-3 pt-2 border-t border-border/50">
-                      <div className="flex-1">
-                        <label className="text-xs font-semibold text-muted block mb-1">Admin Notes (optional)</label>
-                        <input
-                          type="text"
-                          className="w-full !bg-card-soft !border !border-border !rounded-lg !px-3 !py-2 !text-sm !text-foreground"
-                          placeholder="Add a note..."
-                          value={adminNotes[action.id] ?? ""}
-                          onChange={(e) => setAdminNotes((prev) => ({ ...prev, [action.id]: e.target.value }))}
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => decide(action.id, "approve")}
-                        className="!bg-success !text-white !font-bold !px-5 !py-2 !rounded-full !text-sm hover:!opacity-90 flex items-center gap-1.5"
-                      >
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        Approve
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => decide(action.id, "reject")}
-                        className="!bg-danger !text-white !font-bold !px-5 !py-2 !rounded-full !text-sm hover:!opacity-90 flex items-center gap-1.5"
-                      >
-                        <XCircle className="w-3.5 h-3.5" />
-                        Reject
-                      </button>
-                    </div>
-                  )}
                 </div>
               </motion.article>
             );

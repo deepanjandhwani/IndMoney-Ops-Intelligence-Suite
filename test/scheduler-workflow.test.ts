@@ -203,6 +203,22 @@ describe("Phase 5 scheduler workflow", () => {
     expect(pivot.response_text).not.toContain("valid booking code");
   });
 
+  it("recognizes spoken booking codes during reschedule", async () => {
+    const { deps } = testDeps();
+    const bookingOutput = await createBookingThroughChat(deps);
+
+    const reschedule = await processSchedulerMessage("I need to reschedule", undefined, deps);
+    const codePrompt = await processSchedulerMessage(
+      spellBookingCode(bookingOutput.booking_code),
+      reschedule.context,
+      deps
+    );
+
+    expect(codePrompt.next_state).toBe("topic_collection");
+    expect(codePrompt.context?.booking_code).toBe(bookingOutput.booking_code);
+    expect(codePrompt.response_text).toContain("What would you like the advisor call");
+  });
+
   it("pivots from cancellation confirm to new booking when user changes mind", async () => {
     const { deps } = testDeps();
     const bookingOutput = await createBookingThroughChat(deps);
@@ -258,6 +274,32 @@ async function createBookingThroughChat(deps: SchedulerLifecycleDeps) {
   const options = await processSchedulerMessage("Monday", topic.context, deps);
   const slot = await processSchedulerMessage("1", options.context, deps);
   return processSchedulerMessage("yes", slot.context, deps);
+}
+
+const DIGIT_WORDS: Record<string, string> = {
+  "0": "zero",
+  "1": "one",
+  "2": "two",
+  "3": "three",
+  "4": "four",
+  "5": "five",
+  "6": "six",
+  "7": "seven",
+  "8": "eight",
+  "9": "nine"
+};
+
+function spellBookingCode(bookingCode?: string) {
+  if (!bookingCode) {
+    throw new Error("Missing booking code");
+  }
+
+  const [prefix, suffix] = bookingCode.split("-");
+  return `${prefix.split("").join(" ")} dash ${suffix[0]} ${suffix
+    .slice(1)
+    .split("")
+    .map((digit) => DIGIT_WORDS[digit])
+    .join(" ")}`;
 }
 
 function testDeps() {

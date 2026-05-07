@@ -1,6 +1,85 @@
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const DIGITS = "0123456789";
 const BOOKING_CODE_PATTERN = /^[A-Z]{2}-[A-Z][0-9]{3}$/;
+const SPOKEN_CODE_WORDS: Record<string, string> = {
+  ZERO: "0",
+  OH: "0",
+  ONE: "1",
+  WON: "1",
+  TWO: "2",
+  TO: "2",
+  TOO: "2",
+  THREE: "3",
+  FOUR: "4",
+  FOR: "4",
+  FIVE: "5",
+  SIX: "6",
+  SEVEN: "7",
+  EIGHT: "8",
+  ATE: "8",
+  NINE: "9",
+  TEN: "10",
+  ELEVEN: "11",
+  TWELVE: "12",
+  THIRTEEN: "13",
+  FOURTEEN: "14",
+  FIFTEEN: "15",
+  SIXTEEN: "16",
+  SEVENTEEN: "17",
+  EIGHTEEN: "18",
+  NINETEEN: "19",
+  ALPHA: "A",
+  BRAVO: "B",
+  CHARLIE: "C",
+  SEE: "C",
+  SEA: "C",
+  DELTA: "D",
+  DEE: "D",
+  ECHO: "E",
+  FOXTROT: "F",
+  GOLF: "G",
+  HOTEL: "H",
+  INDIA: "I",
+  EYE: "I",
+  JULIET: "J",
+  JULIETT: "J",
+  JAY: "J",
+  KILO: "K",
+  LIMA: "L",
+  MIKE: "M",
+  NOVEMBER: "N",
+  OSCAR: "O",
+  PAPA: "P",
+  QUEBEC: "Q",
+  QUEUE: "Q",
+  CUE: "Q",
+  ROMEO: "R",
+  SIERRA: "S",
+  TANGO: "T",
+  UNIFORM: "U",
+  VICTOR: "V",
+  WHISKEY: "W",
+  WHISKY: "W",
+  XRAY: "X",
+  X_RAY: "X",
+  YANKEE: "Y",
+  WHY: "Y",
+  WYE: "Y",
+  ZULU: "Z",
+  ZED: "Z",
+  ZEE: "Z"
+};
+const TENS_WORDS: Record<string, string> = {
+  TWENTY: "2",
+  THIRTY: "3",
+  FORTY: "4",
+  FOURTY: "4",
+  FIFTY: "5",
+  SIXTY: "6",
+  SEVENTY: "7",
+  EIGHTY: "8",
+  NINETY: "9"
+};
 
 export type BookingCodeRepository = {
   bookingCodeExists: (bookingCode: string) => Promise<boolean>;
@@ -37,6 +116,18 @@ export function isValidBookingCode(bookingCode: string) {
  * Recover XX-X999 from messy voice/STT text (e.g. "R GDashY133.", "NL A742", "it's NL-A742").
  */
 export function parseBookingCodeFromLooseInput(input: string): string | null {
+  const direct = parseBookingCodeCandidate(input);
+  if (direct) return direct;
+
+  const spoken = normalizeSpokenBookingCode(input);
+  if (spoken !== input) {
+    return parseBookingCodeCandidate(spoken);
+  }
+
+  return null;
+}
+
+function parseBookingCodeCandidate(input: string): string | null {
   let s = input.toUpperCase().trim();
   s = s.replace(/\s*(?:DASH|HYPHEN|MINUS)\s*/gi, "-");
   s = s.replace(/DASH/gi, "-");
@@ -61,6 +152,20 @@ export function parseBookingCodeFromLooseInput(input: string): string | null {
   }
 
   return null;
+}
+
+function normalizeSpokenBookingCode(input: string) {
+  let s = input.toUpperCase();
+
+  s = s.replace(
+    /\b(TWENTY|THIRTY|FORTY|FOURTY|FIFTY|SIXTY|SEVENTY|EIGHTY|NINETY)(?:[\s-]+(ONE|TWO|THREE|FOUR|FIVE|SIX|SEVEN|EIGHT|NINE))?\b/g,
+    (_match, tens: string, ones?: string) => `${TENS_WORDS[tens]}${ones ? SPOKEN_CODE_WORDS[ones] : "0"}`
+  );
+
+  s = s.replace(/\bX[\s-]?RAY\b/g, "X");
+  s = s.replace(/\b([A-Z]+)\b/g, (word) => SPOKEN_CODE_WORDS[word] ?? word);
+
+  return s;
 }
 
 export async function generateUniqueBookingCode(

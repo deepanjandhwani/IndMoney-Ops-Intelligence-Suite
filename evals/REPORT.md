@@ -1,29 +1,30 @@
 # Evaluation Report
 
-> Generated: 2026-05-07T12:34:14.470Z
+> Generated: 2026-05-07T17:27:39.457Z
 
-## Overall Score: 19 / 19
+## Overall Score: 22 / 22
 
 | Category | Passed | Total | Rate |
 |---|---|---|---|
-| Golden Retrieval | 5 | 5 | 100% |
-| Safety (Adversarial) | 4 | 4 | 100% |
+| Retrieval Accuracy (RAG Eval) | 5 | 5 | 100% |
+| Constraint Adherence (Safety Eval) | 4 | 4 | 100% |
+| Tone & Structure (UX Eval) | 3 | 3 | 100% |
 | PII Masking | 3 | 3 | 100% |
 | Cost & Model (Static) | 7 | 7 | 100% |
 
 ---
 
-## 1. Golden Dataset — Retrieval Accuracy (5/5)
+## 1. Retrieval Accuracy — RAG Eval (5/5)
 
-| ID | Question | Status | Citations | Missing | Result |
-|---|---|---|---|---|---|
-| Q1 | Exit load is a fee charged when an investor withdraws their ... | answered | src_014, fee_static_001 | — | PASS |
-| Q2 | HDFC Nifty Midcap 150 Index Fund Direct Growth tracks the NI... | answered | src_006 | — | PASS |
-| Q3 | The expense ratio is a measure of the annual maintenance cha... | answered | src_001, fee_static_001 | — | PASS |
-| Q4 | An exit load is a fee charged when an investor withdraws fro... | answered | src_013, fee_static_001 | — | PASS |
-| Q5 | The minimum SIP amount for HDFC Transportation and Logistics... | answered | src_002 | — | PASS |
+| ID | Answer Preview | Faithfulness | Relevance | Citations | Missing | Result |
+|---|---|---|---|---|---|---|
+| Q1 | An exit load is the amount payable when a person chooses to ... | PASS | PASS | src_014, fee_static_001 | — | PASS |
+| Q2 | The HDFC NIFTY Midcap 150 Index Fund Direct Growth tracks th... | PASS | PASS | src_006 | — | PASS |
+| Q3 | The expense ratio for HDFC Defence Fund Direct Growth is 0.8... | PASS | PASS | src_001, fee_static_001 | — | PASS |
+| Q4 | An exit load might apply when redeeming units of HDFC Value ... | PASS | PASS | src_013, fee_static_001 | — | PASS |
+| Q5 | The minimum SIP amount for HDFC Transportation and Logistics... | PASS | PASS | src_002 | — | PASS |
 
-## 2. Safety Evaluation — Adversarial Prompts (4/4)
+## 2. Constraint Adherence — Safety Eval (4/4)
 
 | ID | Prompt | Exact Refusal | Result |
 |---|---|---|---|
@@ -34,7 +35,15 @@
 
 **Required pass rate:** 100% (4/4)
 
-## 3. PII Masking Evaluation (3/3)
+## 3. Tone & Structure — UX Eval (3/3)
+
+| ID | Check | Expected | Actual | Result |
+|---|---|---|---|---|
+| UX1 | Weekly Pulse word count | <= 250 words | 156 words | PASS |
+| UX2 | Action ideas | Exactly 3 | 3 | PASS |
+| UX3 | Voice Agent mentions top theme | Latest top theme included | Included "App Usability" | PASS |
+
+## 4. Supplementary Safety Evidence — PII Masking (3/3)
 
 | ID | Test | Detail | Result |
 |---|---|---|---|
@@ -44,7 +53,7 @@
 
 **Required pass rate:** 100% (3/3)
 
-## 4. Cost & Model Static Checks (7/7)
+## 5. Supplementary Cost & Model Static Checks (7/7)
 
 | ID | Check | Detail | Result |
 |---|---|---|---|
