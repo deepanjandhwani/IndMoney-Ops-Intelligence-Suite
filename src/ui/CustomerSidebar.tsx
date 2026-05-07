@@ -155,7 +155,7 @@ export function CustomerSidebar() {
                 router.push("/customer/login");
                 router.refresh();
               }}
-              className="!bg-transparent !shadow-none !p-1.5 !rounded-lg text-muted hover:!text-danger hover:!bg-danger/10 transition-colors"
+              className="!bg-danger/10 !shadow-none !p-1.5 !rounded-lg !text-danger hover:!bg-danger/20 transition-colors"
               title="Sign Out"
             >
               <LogOut className="w-3.5 h-3.5" />
