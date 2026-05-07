@@ -909,10 +909,11 @@ const PII_WARNING_TEMPLATE =
 
 ```typescript
 const ADVICE_REFUSAL =
-  `I can't provide investment advice, return predictions, or handle ` +
+  `I can't provide investment advice, future return predictions, or handle ` +
   `personal account information. I can help with facts from approved ` +
-  `sources, such as exit load, expense ratio, lock-in, benchmark, ` +
-  `riskometer, fee explanation, or statement download steps. ` +
+  `sources, such as NAV, AUM, exit load, expense ratio, lock-in, benchmark, ` +
+  `riskometer, historic returns, fund manager, rating, fee explanation, ` +
+  `or statement download steps. ` +
   `For investor education, see https://investor.sebi.gov.in/.`;
 ```
 

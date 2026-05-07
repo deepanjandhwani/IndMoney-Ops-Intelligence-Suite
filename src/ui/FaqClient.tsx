@@ -472,18 +472,28 @@ export function FaqClient() {
   async function sendFaqQuestion(question: string) {
     const fundsToSend = Array.from(selectedFunds);
 
+    const historyTurns = messages
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .filter((m) => m.id !== "welcome")
+      .slice(-6)
+      .map((m) => ({ role: m.role, text: m.text }));
+
     const result = await fetch("/api/smart-sync-faq", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         question,
-        selected_funds: fundsToSend
+        selected_funds: fundsToSend,
+        history: historyTurns
       })
     });
 
     const data = (await result.json()) as FaqResponse | { error: string };
-    if (!result.ok || "error" in data) {
-      throw new Error("error" in data ? data.error : "FAQ request failed.");
+    if ("error" in data) {
+      throw new Error(data.error);
+    }
+    if (!result.ok && !("status" in data && "answer" in data)) {
+      throw new Error("FAQ request failed.");
     }
 
     const ragStatusLabel = formatRagStatus(data.status, selectedFunds.size, data.health_error);

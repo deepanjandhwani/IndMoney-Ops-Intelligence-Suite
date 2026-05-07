@@ -16,7 +16,7 @@
 - Theme clustering runs locally (BERTopic). LLM calls receive theme summaries, not raw reviews. No per-review LLM calls.
 - Embeddings must use a free model (Gemini, Cohere free tier, 
   or local model).
-- Vector DB is ChromaDB (`smart_sync_kb` single collection) for this project.
+- Vector DB is ChromaDB (`smart-sync-kb` single collection) for this project.
   Pinecone free tier is only a future migration option.
 - Deepgram STT is credit-limited. If credits are exhausted or the API is 
   unavailable, fall back to Web Speech API or chat.
@@ -33,11 +33,12 @@
   predictions, portfolio advice, performance guarantees
 - Refusal message (use exactly this string, including the trailing
   SEBI investor-education link required by the M1 brief):
-  "I can't provide investment advice, return predictions, or handle 
+  "I can't provide investment advice, future return predictions, or handle 
   personal account information. I can help with facts from approved 
-  sources, such as exit load, expense ratio, lock-in, benchmark, 
-  riskometer, fee explanation, or statement download steps. For 
-  investor education, see https://investor.sebi.gov.in/."
+  sources, such as NAV, AUM, exit load, expense ratio, lock-in, benchmark, 
+  riskometer, historic returns, fund manager, rating, fee explanation, 
+  or statement download steps. For investor education, see 
+  https://investor.sebi.gov.in/."
 - Verified in: Module F safety eval
 
 ## Citation Rules

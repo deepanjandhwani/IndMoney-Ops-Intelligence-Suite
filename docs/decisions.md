@@ -78,24 +78,28 @@ Cost: Free
 Date: 2026-04-28
 
 ## ADR-009: LLM provider and model selection
-Decision: Two-model split on Gemini free tier.
+Decision: Two-model split on Gemini free tier with Groq fallback.
 - Generation tasks (RAG answers, pulse summary, label refinement, action ideas,
   preparation guidance): Gemini 2.5 Flash (10 RPM, 500 RPD).
 - Classification and safety tasks (intent classification, safety checks,
-  query classification): Gemini 2.5 Flash-Lite (15 RPM, 1,000 RPD).
+  query classification, query rewriting): Gemini 2.5 Flash-Lite (15 RPM, 1,000 RPD).
 - Advisor email drafts are template-based and read cached Review Pulse context
   from the database; they do not make a separate LLM call.
+Groq fallback:
+- Classification/safety primary: Groq llama-3.1-8b-instant (sub-second inference).
+  Fallback model: llama3-8b-8192.
+- Generation last-resort: Groq llama-3.3-70b-versatile — used when Gemini is
+  overloaded (503/429). This extends ADR-009 beyond classification-only Groq use.
 Alternative considered:
-- Groq Llama 3 (free: 30 RPM) — viable fallback for classification and safety
-  if Gemini rate limit is hit.
 - Cohere Command R+ (free: 1,000 calls/month) — rejected; monthly cap too tight
   for development iteration.
 Note: Gemini 2.0 Flash was deprecated Feb 2026 and retired March 3, 2026.
 All references in this project use 2.5-series models.
 Strategy: Flash-Lite for high-volume cheap tasks (classification, safety).
-Flash for quality-sensitive generation. Groq Llama 3 as fallback for classification/safety only.
+Flash for quality-sensitive generation. Groq as fallback — llama-3.1-8b-instant
+for classification/safety, llama-3.3-70b-versatile for generation if Gemini rate-limited.
 Cost: Free
-Date: 2026-04-30
+Date: 2026-04-30 (updated 2026-05-07)
 
 ## ADR-010: LLM call caching
 Decision: Cache weekly outputs in database.
@@ -119,12 +123,13 @@ Cost: Free
 Date: 2026-04-30 (updated 2026-05-04)
 
 ## ADR-012: ChromaDB collection structure
-Decision: Single collection smart_sync_kb with metadata filters
+Decision: Single collection `smart-sync-kb` with metadata filters
 Alternative considered: Two separate collections faq_chunks
 and fee_chunks
 Reason: Multi-hop retrieval requires querying both chunk types
 in a single pass. Single collection with metadata filters
 is cleaner and avoids cross-collection merge logic.
+Note: Originally named `smart_sync_kb`; renamed to `smart-sync-kb` for ChromaDB v2 API compatibility.
 Affects: src/rag/retrieve.ts, src/rag/classify.ts, src/rag/faq.ts
 Cost: Free
 Date: 2026-04-28

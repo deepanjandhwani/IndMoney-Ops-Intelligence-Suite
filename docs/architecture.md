@@ -271,10 +271,13 @@ All Phase 1 `public` tables have RLS enabled. Until role-specific access policie
 | secure_link_expires_at | TIMESTAMP | Expiry for the secure details link |
 | calendar_event_id | TEXT | From Google Calendar API |
 | sheet_row_id | TEXT | From Google Sheets API |
-| email_draft_id | TEXT | From Gmail API |
-| calendar_status | TEXT | `created` / `updated` / `cancelled` / `failed` |
-| sheet_status | TEXT | `created` / `updated` / `cancelled` / `failed` |
-| email_draft_status | TEXT | `created` / `updated` / `failed` |
+| email_draft_id | TEXT | From Gmail API (advisor draft) |
+| customer_email_draft_id | TEXT | From Gmail API (customer-facing draft, created after secure details + approval) |
+| customer_email_draft_status | TEXT | `pending` / `created` / `updated` / `sent` / `failed` |
+| customer_id | TEXT | Nullable; links to customer identity when available |
+| calendar_status | TEXT | `pending` / `created` / `updated` / `cancelled` / `failed` |
+| sheet_status | TEXT | `pending` / `created` / `updated` / `cancelled` / `failed` |
+| email_draft_status | TEXT | `pending` / `created` / `updated` / `failed` |
 | created_at | TIMESTAMP | |
 | updated_at | TIMESTAMP | |
 
@@ -374,7 +377,7 @@ When Supabase credentials are not configured, chat history is persisted to a loc
 
 ChromaDB runs locally as the selected free vector DB for the capstone demo. For a hosted deployment, it must run as an explicitly configured free sidecar service or be migrated through a new ADR. The daily Smart-Sync RAG refresh workflow runs at 10:00 AM IST (`30 4 * * *` UTC) and must use `GH_CHROMA_URL` pointing to the same reachable ChromaDB instance that serves customer FAQ queries.
 
-**Collection: `smart_sync_kb`**
+**Collection: `smart-sync-kb`**
 
 Single collection with metadata-based partitioning. Stores all chunks — scheme factsheets (~15 predefined official URLs scraped via Playwright), static fee explainer, regulatory education pages, and help pages. Chunk types are distinguished via `content_type` metadata field, not separate collections.
 
@@ -470,7 +473,7 @@ Admin-only modules (A, B, E, F) must never be accessible or visible to Customer 
 
 Standard refusal message (from `rules.md`):
 
-> "I can't provide investment advice, return predictions, or handle personal account information. I can help with facts from approved sources, such as exit load, expense ratio, lock-in, benchmark, riskometer, fee explanation, or statement download steps. For investor education, see https://investor.sebi.gov.in/."
+> "I can't provide investment advice, future return predictions, or handle personal account information. I can help with facts from approved sources, such as NAV, AUM, exit load, expense ratio, lock-in, benchmark, riskometer, historic returns, fund manager, rating, fee explanation, or statement download steps. For investor education, see https://investor.sebi.gov.in/."
 
 ### Citation Check
 
@@ -551,7 +554,7 @@ If cached Review Pulse is stale (>7 days), trigger regeneration before serving (
 ### Phase 3 — RAG + FAQ (Module C)
 
 - **Modules:** Module C
-- **Deliverables:** Approved source manifest, static fee explainer, Playwright ingestion, ChromaDB `smart_sync_kb` collection, metadata-filtered retrieval with BM25 rerank, cited answer generation, and safety checks.
+- **Deliverables:** Approved source manifest, static fee explainer, Playwright ingestion, ChromaDB `smart-sync-kb` collection, metadata-filtered retrieval with BM25 rerank, cited answer generation, and safety checks.
 - **Integrations:** ChromaDB local/sidecar, Gemini embeddings/generation, Playwright
 - **Complexity:** High
 

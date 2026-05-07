@@ -208,7 +208,7 @@ type ContentType = "scheme_fact" | "fee_explanation" | "regulatory_education" | 
 
 | Property | Value |
 |---|---|
-| Collection name | `smart_sync_kb` |
+| Collection name | `smart-sync-kb` |
 | Embedding function | Gemini gemini-embedding-001 (via custom ChromaDB embedding function) |
 | Distance metric | Cosine similarity (`cosine`) |
 | Total documents | ~200–400 chunks |
@@ -261,7 +261,7 @@ This ensures scheme facts never compete with help page text for the same similar
 
 ```typescript
 interface ChromaDBConfig {
-  collectionName: "smart_sync_kb";
+  collectionName: "smart-sync-kb";
   embeddingModel: "gemini-embedding-001";
   embeddingDimensions: 768;
   distanceMetric: "cosine";
@@ -603,7 +603,7 @@ FUNCTION agenticRAG(user_query: string): FAQAnswer
 
   IF classification.category == "out_of_scope":
     RETURN refusalResponse()
-    //   "I can't provide investment advice, return predictions,
+    //   "I can't provide investment advice, future return predictions,
     //   or handle personal account information..."
 
   // ── Step 2: Call primary retrieval tool ─────────────────
@@ -872,10 +872,11 @@ When safety check fails, return the exact refusal from `rules.md`:
 
 ```typescript
 const SAFETY_REFUSAL =
-  "I can't provide investment advice, return predictions, or handle " +
+  "I can't provide investment advice, future return predictions, or handle " +
   "personal account information. I can help with facts from approved " +
-  "sources, such as exit load, expense ratio, lock-in, benchmark, " +
-  "riskometer, fee explanation, or statement download steps. " +
+  "sources, such as NAV, AUM, exit load, expense ratio, lock-in, benchmark, " +
+  "riskometer, historic returns, fund manager, rating, fee explanation, " +
+  "or statement download steps. " +
   "For investor education, see https://investor.sebi.gov.in/.";
 ```
 
@@ -896,7 +897,7 @@ Chunker (content-aware splitting per Section 2)
     ↓
 Embedder (Gemini gemini-embedding-001)
     ↓
-ChromaDB Upsert (smart_sync_kb collection)
+ChromaDB Upsert (smart-sync-kb collection)
     ↓
 Stale Chunk Detection + Cleanup
 ```
@@ -929,7 +930,7 @@ src/rag/
 interface IngestionConfig {
   sourceManifestPath: string;  // config/source_urls.json
   feeExplainerPath: string;   // config/static_fee_explainer.md
-  chromaCollection: string;    // "smart_sync_kb"
+  chromaCollection: string;    // "smart-sync-kb"
   forceReIngest: boolean;      // re-scrape even if content unchanged
 }
 

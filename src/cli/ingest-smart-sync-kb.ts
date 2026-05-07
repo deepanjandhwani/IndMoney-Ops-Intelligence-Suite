@@ -10,7 +10,7 @@ async function main() {
   const result = await runRagIngestion({
     sourceManifestPath: process.env.RAG_SOURCE_MANIFEST_PATH ?? "config/source_urls.json",
     feeExplainerPath: process.env.RAG_FEE_EXPLAINER_PATH ?? "config/static_fee_explainer.md",
-    chromaCollection: process.env.CHROMA_COLLECTION ?? "smart_sync_kb",
+    chromaCollection: process.env.CHROMA_COLLECTION ?? "smart-sync-kb",
     forceReIngest: process.env.RAG_FORCE_REINGEST === "true"
   });
 

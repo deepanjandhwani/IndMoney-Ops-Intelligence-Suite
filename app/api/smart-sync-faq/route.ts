@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { createChromaVectorStore, isChromaUnavailable, VectorStore } from "@/rag/chroma";
-import { createSmartSyncFaqService } from "@/rag/faq";
+import { createSmartSyncFaqService, isGeminiServiceError } from "@/rag/faq";
 import { createGeminiRagClient, GeminiRagClient } from "@/rag/gemini";
 
 export const runtime = "nodejs";
@@ -77,6 +77,21 @@ export async function POST(request: NextRequest) {
         {
           status: "no_results",
           answer: "The FAQ service is temporarily unavailable. Please try again in a moment.",
+          citations: [],
+          health_error: errorMessage
+        },
+        { status: 503, headers: { "Retry-After": "30" } }
+      );
+    }
+
+    if (isGeminiServiceError(error)) {
+      const quota = /429|quota|RESOURCE_EXHAUSTED|rate limit|Too Many Requests/i.test(errorMessage);
+      return NextResponse.json(
+        {
+          status: "no_results",
+          answer: quota
+            ? "The AI service hit a rate limit or daily quota. Please wait a minute and retry."
+            : "The AI model had a temporary error or overload. Please try again in a moment.",
           citations: [],
           health_error: errorMessage
         },

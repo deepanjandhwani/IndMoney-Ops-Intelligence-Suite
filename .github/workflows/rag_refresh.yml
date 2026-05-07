@@ -12,7 +12,7 @@ jobs:
     timeout-minutes: 30
     env:
       CHROMA_URL: ${{ secrets.GH_CHROMA_URL }}
-      CHROMA_COLLECTION: smart_sync_kb
+      CHROMA_COLLECTION: smart-sync-kb
       RAG_SOURCE_MANIFEST_PATH: config/source_urls.json
       RAG_FEE_EXPLAINER_PATH: config/static_fee_explainer.md
       RAG_FORCE_REINGEST: "false"

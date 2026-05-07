@@ -8,7 +8,7 @@ import { retrieveContext, hasSufficientContext } from "./retrieve";
 import { GREETING_RESPONSE, SAFETY_REFUSAL, shouldRefuseQuery } from "./safety";
 import { ConversationTurn, FaqAnswer, QueryClassification } from "./types";
 
-function isGeminiServiceError(error: unknown): boolean {
+export function isGeminiServiceError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return /503|429|Too Many Requests|RESOURCE_EXHAUSTED|Service Unavailable|high demand|rate limit|fetch failed|ECONNRESET|ETIMEDOUT/i.test(message);
 }
