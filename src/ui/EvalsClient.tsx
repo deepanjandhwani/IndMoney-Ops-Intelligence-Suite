@@ -11,78 +11,52 @@ import {
   CheckCircle2,
   XCircle,
   Play,
-  Loader2
+  Loader2,
+  AlertCircle
 } from "lucide-react";
+
+type EvalCheck = { name: string; passed: boolean | null };
 
 type EvalCategory = {
   id: string;
   label: string;
   description: string;
   icon: typeof Search;
-  checks: { name: string; passed: boolean | null }[];
+  checks: EvalCheck[];
 };
 
-const INITIAL_CATEGORIES: EvalCategory[] = [
-  {
-    id: "retrieval",
-    label: "Retrieval Accuracy",
+const CATEGORY_META: Record<string, { description: string; icon: typeof Search }> = {
+  retrieval: {
     description: "Verifies RAG retrieval returns relevant chunks for golden-set questions",
-    icon: Search,
-    checks: [
-      { name: "Exit load retrieval for scheme_fact source", passed: null },
-      { name: "Expense ratio retrieval with BM25 boost", passed: null },
-      { name: "Fee explainer retrieval for fee_static source", passed: null },
-      { name: "Multi-source retrieval (scheme + fee)", passed: null },
-      { name: "Out-of-scope query correctly refused", passed: null }
-    ]
+    icon: Search
   },
-  {
-    id: "safety",
-    label: "Safety Guard",
+  safety: {
     description: "Ensures no investment advice, buy/sell/hold signals, or return predictions leak through",
-    icon: ShieldCheck,
-    checks: [
-      { name: "Buy/sell recommendation refusal", passed: null },
-      { name: "Return prediction refusal", passed: null },
-      { name: "Portfolio advice refusal", passed: null }
-    ]
+    icon: ShieldCheck
   },
-  {
-    id: "pii",
-    label: "PII Masking",
+  pii: {
     description: "Validates PII is detected and masked before storage and in responses",
-    icon: Fingerprint,
-    checks: [
-      { name: "Phone number masking in review text", passed: null },
-      { name: "Email masking in scheduler conversation", passed: null },
-      { name: "PAN/Aadhaar masking in FAQ input", passed: null }
-    ]
+    icon: Fingerprint
   },
-  {
-    id: "integration",
-    label: "Integration Sync",
+  integration: {
     description: "Checks calendar, sheet, and email draft sync after booking operations",
-    icon: Link2,
-    checks: [
-      { name: "Calendar hold created on booking", passed: null },
-      { name: "Sheet row created with booking code", passed: null },
-      { name: "Email draft includes market context", passed: null },
-      { name: "HITL and sheet status stay in sync", passed: null }
-    ]
+    icon: Link2
   },
-  {
-    id: "cost",
-    label: "Cost & Model",
+  cost: {
     description: "Verifies free-tier compliance: correct model selection, no retired models, no paid APIs",
-    icon: Cpu,
-    checks: [
-      { name: "No retired Gemini 2.0 model references", passed: null },
-      { name: "Classification uses Flash-Lite", passed: null },
-      { name: "Generation uses Flash (not Pro)", passed: null },
-      { name: "No Pinecone references in codebase", passed: null }
-    ]
+    icon: Cpu
   }
-];
+};
+
+const INITIAL_CATEGORIES: EvalCategory[] = Object.entries(CATEGORY_META).map(
+  ([id, meta]) => ({
+    id,
+    label: meta.description.slice(0, 20),
+    description: meta.description,
+    icon: meta.icon,
+    checks: []
+  })
+);
 
 const fadeUp = {
   hidden: { opacity: 0, y: 16 },
@@ -90,25 +64,37 @@ const fadeUp = {
 };
 
 export function EvalsClient() {
-  const [categories, setCategories] = useState(INITIAL_CATEGORIES);
+  const [categories, setCategories] = useState<EvalCategory[]>(INITIAL_CATEGORIES);
   const [running, setRunning] = useState(false);
   const [lastRun, setLastRun] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [lastFullReport, setLastFullReport] = useState<string | null>(null);
 
-  function simulateRun() {
+  async function runEvals() {
     setRunning(true);
-    setTimeout(() => {
-      setCategories((prev) =>
-        prev.map((cat) => ({
-          ...cat,
-          checks: cat.checks.map((check) => ({
-            ...check,
-            passed: Math.random() > 0.15
-          }))
-        }))
-      );
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/evals");
+      if (!res.ok) throw new Error(`API returned ${res.status}`);
+      const data = await res.json();
+
+      const cats = data.categories as Record<string, { label: string; checks: EvalCheck[] }>;
+      const mapped: EvalCategory[] = Object.entries(cats).map(([id, cat]) => ({
+        id,
+        label: cat.label,
+        description: CATEGORY_META[id]?.description ?? cat.label,
+        icon: CATEGORY_META[id]?.icon ?? Search,
+        checks: cat.checks
+      }));
+
+      setCategories(mapped);
       setLastRun(new Date().toLocaleTimeString());
+      setLastFullReport(data.last_full_report ?? null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
       setRunning(false);
-    }, 2000);
+    }
   }
 
   const totalChecks = categories.reduce((n, c) => n + c.checks.length, 0);
@@ -118,6 +104,10 @@ export function EvalsClient() {
   );
   const failedChecks = categories.reduce(
     (n, c) => n + c.checks.filter((ch) => ch.passed === false).length,
+    0
+  );
+  const pendingChecks = categories.reduce(
+    (n, c) => n + c.checks.filter((ch) => ch.passed === null).length,
     0
   );
   const hasResults = categories.some((c) => c.checks.some((ch) => ch.passed !== null));
@@ -138,13 +128,20 @@ export function EvalsClient() {
             Evaluation Suite
           </h1>
           <p className="mt-1 text-muted text-sm">
-            {totalChecks} checks across {categories.length} categories
+            {totalChecks > 0
+              ? `${totalChecks} checks across ${categories.length} categories`
+              : `${categories.length} categories`}
             {lastRun && <> &middot; Last run: {lastRun}</>}
           </p>
+          {lastFullReport && (
+            <p className="text-xs text-muted mt-0.5">
+              Last full report (with golden/safety): {new Date(lastFullReport).toLocaleString()}
+            </p>
+          )}
         </div>
         <button
           type="button"
-          onClick={simulateRun}
+          onClick={runEvals}
           disabled={running}
           className="!bg-accent !text-white !font-bold !px-6 !py-2.5 !rounded-full !text-sm hover:!bg-accent-strong flex items-center gap-2"
         >
@@ -153,8 +150,18 @@ export function EvalsClient() {
         </button>
       </motion.div>
 
+      {error && (
+        <motion.div
+          variants={fadeUp}
+          className="flex items-center gap-3 text-danger bg-danger/5 border border-danger/20 rounded-2xl p-4"
+        >
+          <AlertCircle className="w-5 h-5 shrink-0" />
+          <span className="text-sm">{error}</span>
+        </motion.div>
+      )}
+
       {hasResults && (
-        <motion.div variants={fadeUp} className="grid grid-cols-3 gap-4">
+        <motion.div variants={fadeUp} className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div className="bg-card border border-border rounded-2xl p-4 text-center">
             <span className="text-2xl font-bold text-foreground">{totalChecks}</span>
             <p className="text-xs text-muted mt-1">Total Checks</p>
@@ -166,6 +173,10 @@ export function EvalsClient() {
           <div className="bg-danger/5 border border-danger/20 rounded-2xl p-4 text-center">
             <span className="text-2xl font-bold text-danger">{failedChecks}</span>
             <p className="text-xs text-muted mt-1">Failed</p>
+          </div>
+          <div className="bg-card border border-border rounded-2xl p-4 text-center">
+            <span className="text-2xl font-bold text-muted">{pendingChecks}</span>
+            <p className="text-xs text-muted mt-1">Pending</p>
           </div>
         </motion.div>
       )}
@@ -191,38 +202,59 @@ export function EvalsClient() {
                   <p className="text-xs text-muted">{cat.description}</p>
                 </div>
                 <div className="text-right shrink-0">
-                  {pending === cat.checks.length ? (
+                  {cat.checks.length === 0 ? (
+                    <span className="text-xs text-muted">Click Run</span>
+                  ) : pending === cat.checks.length ? (
                     <span className="text-xs text-muted">Not run</span>
                   ) : (
                     <span className="text-xs font-bold">
                       <span className="text-success">{passed}</span>
                       {" / "}
-                      <span className={failed > 0 ? "text-danger" : "text-muted"}>{cat.checks.length}</span>
+                      <span className={failed > 0 ? "text-danger" : "text-muted"}>
+                        {cat.checks.length}
+                      </span>
                     </span>
                   )}
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                {cat.checks.map((check) => (
-                  <div key={check.name} className="flex items-center gap-2.5 py-1">
-                    {check.passed === null ? (
-                      <div className="w-4 h-4 rounded-full border-2 border-border shrink-0" />
-                    ) : check.passed ? (
-                      <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
-                    ) : (
-                      <XCircle className="w-4 h-4 text-danger shrink-0" />
-                    )}
-                    <span className={`text-sm ${check.passed === false ? "text-danger font-semibold" : "text-foreground"}`}>
-                      {check.name}
-                    </span>
-                  </div>
-                ))}
-              </div>
+              {cat.checks.length > 0 && (
+                <div className="space-y-1.5">
+                  {cat.checks.map((check) => (
+                    <div key={check.name} className="flex items-center gap-2.5 py-1">
+                      {check.passed === null ? (
+                        <div className="w-4 h-4 rounded-full border-2 border-border shrink-0" />
+                      ) : check.passed ? (
+                        <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
+                      ) : (
+                        <XCircle className="w-4 h-4 text-danger shrink-0" />
+                      )}
+                      <span
+                        className={`text-sm ${check.passed === false ? "text-danger font-semibold" : "text-foreground"}`}
+                      >
+                        {check.name}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </motion.article>
           );
         })}
       </div>
+
+      {!hasResults && !running && (
+        <motion.div variants={fadeUp} className="text-center py-12 text-muted text-sm">
+          Click <strong>Run Evals</strong> to execute PII masking, cost/model static checks, and load
+          golden retrieval + safety results.
+          <br />
+          <span className="text-xs">
+            For full golden/safety evals, run{" "}
+            <code className="bg-muted/10 px-1.5 py-0.5 rounded text-xs">npm run evals:phase3</code>{" "}
+            first.
+          </span>
+        </motion.div>
+      )}
     </motion.div>
   );
 }

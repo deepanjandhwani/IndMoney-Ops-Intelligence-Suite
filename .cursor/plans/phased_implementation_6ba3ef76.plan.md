@@ -22,13 +22,13 @@ todos:
     status: completed
   - id: phase-6-voice
     content: Add Deepgram/Web Speech voice mode over the shared scheduler state machine
-    status: pending
+    status: completed
   - id: phase-7-admin-ui
     content: Build dashboards, role-aware navigation, trends, and integration retry UI
-    status: pending
+    status: completed
   - id: phase-8-evals
     content: Implement full evaluation suite and hardening checks
-    status: pending
+    status: completed
 isProject: false
 ---
 

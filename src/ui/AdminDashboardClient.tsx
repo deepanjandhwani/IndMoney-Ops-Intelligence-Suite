@@ -9,8 +9,23 @@ import {
   ShieldCheck,
   TrendingUp,
   ArrowRight,
-  AlertCircle
+  AlertCircle,
+  Database,
+  Activity,
+  CheckCircle2,
+  XCircle
 } from "lucide-react";
+
+type IngestionRun = {
+  id: string;
+  source: string;
+  status: string;
+  total_fetched: number;
+  new_stored: number;
+  duplicates_skipped: number;
+  errors: number;
+  created_at: string;
+};
 
 type DashboardSummary = {
   pulse: {
@@ -31,6 +46,14 @@ type DashboardSummary = {
   }[];
   totalReviews: number;
   pendingHitlCount: number;
+  ingestionHealth: {
+    recentRuns: IngestionRun[];
+    chromaDb: {
+      status: string;
+      collection: string | null;
+      error: string | null;
+    };
+  };
 };
 
 const fadeUp = {
@@ -215,6 +238,81 @@ export function AdminDashboardClient() {
                   </span>
                   <span className="text-xs text-muted">
                     {new Date(action.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </motion.div>
+
+      <motion.div variants={fadeUp} className="bg-card border border-border rounded-2xl p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Activity className="w-5 h-5 text-accent" />
+            <h2 className="font-bold text-foreground">Ingestion Health</h2>
+          </div>
+          <div className="flex items-center gap-2">
+            <Database className="w-4 h-4 text-muted" />
+            <span className="text-xs text-muted">
+              ChromaDB:{" "}
+              <span
+                className={
+                  data?.ingestionHealth?.chromaDb?.status === "healthy"
+                    ? "text-success font-bold"
+                    : data?.ingestionHealth?.chromaDb?.status === "unavailable"
+                      ? "text-danger font-bold"
+                      : "text-warning font-bold"
+                }
+              >
+                {data?.ingestionHealth?.chromaDb?.status ?? "unknown"}
+              </span>
+              {data?.ingestionHealth?.chromaDb?.collection && (
+                <> &middot; {data.ingestionHealth.chromaDb.collection}</>
+              )}
+            </span>
+          </div>
+        </div>
+
+        {data?.ingestionHealth?.chromaDb?.error && (
+          <div className="flex items-center gap-2 mb-3 bg-danger/5 border border-danger/20 rounded-xl px-3 py-2">
+            <XCircle className="w-4 h-4 text-danger shrink-0" />
+            <span className="text-xs text-danger">{data.ingestionHealth.chromaDb.error}</span>
+          </div>
+        )}
+
+        {(!data?.ingestionHealth?.recentRuns || data.ingestionHealth.recentRuns.length === 0) ? (
+          <p className="text-sm text-muted">No ingestion runs recorded yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {data.ingestionHealth.recentRuns.map((run) => (
+              <div
+                key={run.id}
+                className="flex items-center justify-between py-2 border-b border-border/50 last:border-0"
+              >
+                <div className="flex items-center gap-3">
+                  {run.status === "success" || run.status === "partial_success" ? (
+                    <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
+                  ) : (
+                    <XCircle className="w-4 h-4 text-danger shrink-0" />
+                  )}
+                  <div>
+                    <span className="text-sm font-semibold text-foreground">{run.source}</span>
+                    <span className="text-xs text-muted ml-2">
+                      {run.new_stored} new &middot; {run.duplicates_skipped} dupes &middot; {run.errors} errors
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                    run.status === "success" ? "bg-success/10 text-success" :
+                    run.status === "partial_success" ? "bg-warning/10 text-warning" :
+                    "bg-danger/10 text-danger"
+                  }`}>
+                    {run.status}
+                  </span>
+                  <span className="text-xs text-muted">
+                    {new Date(run.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
                   </span>
                 </div>
               </div>
