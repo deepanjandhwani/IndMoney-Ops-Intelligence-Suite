@@ -5,8 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ShieldCheck, AlertCircle } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/adapters/supabase/browser-client";
 
-const HARDCODED_ADMIN_EMAIL = "deepanjan0611@gmail.com";
-const HARDCODED_ADMIN_PASSWORD = "Deep1305";
+const HARDCODED_ADMIN_EMAIL = "admin@gmail.com";
+const HARDCODED_ADMIN_PASSWORD = "admin";
 
 export function AdminLoginClient() {
   const router = useRouter();
