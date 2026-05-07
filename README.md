@@ -24,7 +24,7 @@ A unified AI-powered web application for Groww that connects Google Play Store r
 - **Voice:** Deepgram STT (nova-2) + Deepgram Aura TTS (credit-limited); Web Speech API fallback
 - **MCP:** FastMCP for Google Calendar, Google Sheets, Gmail draft integration
 - **Clustering:** BERTopic (UMAP + HDBSCAN + c-TF-IDF) in Python, runs via GitHub Actions
-- **Hosting:** Vercel free tier (frontend + API) + Supabase free tier (DB)
+- **Hosting:** Vercel free tier (frontend + API) + Supabase free tier (DB) + Railway (MCP sidecar)
 
 ## Prerequisites
 
@@ -264,6 +264,7 @@ All services run on free tiers or credit-limited free credits. No paid service i
 | Supabase | Free tier (500 MB) |
 | ChromaDB | Free (local) |
 | Vercel | Free tier |
+| Railway | Free trial ($5 credit, MCP sidecar) |
 | GitHub Actions | Free (2,000 min/month private, unlimited public) |
 | Deepgram | $200 signup credits (credit-limited) |
 | Groq | Free tier |

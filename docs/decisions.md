@@ -242,6 +242,16 @@ Timeout: 5-second timeout per LLM call. On timeout or error, return null (ask us
 Cost: Free (Gemini free tier)
 Date: 2026-05-06
 
+## ADR-028: Deploy MCP server to Railway
+Decision: Deploy the FastMCP Google sidecar to Railway (free trial, $5 credit) so the Vercel production app can reach it over the public internet. Credentials (credentials.json, token.json) are base64-encoded and injected via environment variables; the entrypoint.sh decodes them at container startup.
+Reason: The MCP server was previously local-only (ADR-006, ADR-008). Vercel serverless functions cannot reach localhost, so HITL Centre integrations (Calendar, Sheets, Email) failed in production. Railway provides a free Docker host with a public URL.
+Headless guard: `_run_oauth_installed_flow()` now raises RuntimeError when `RAILWAY_ENVIRONMENT` is set, preventing the container from hanging on a browser-open attempt. Token refresh via `creds.refresh(Request())` continues to work silently.
+Public URL: `https://mcp-server-production-23eb.up.railway.app/sse`
+Vercel env: `MCP_SERVER_URL` points to the Railway URL.
+Alternative considered: Fly.io (similar free tier), Render (free tier sleeps after 15 min inactivity — would cause cold-start timeouts for MCP SSE connections).
+Cost: Free trial ($5 credit); ~$0.01/hr when active, well within trial for capstone.
+Date: 2026-05-07
+
 ## ADR-027: Auth-protect customer routes, auto-confirm signup, personalized greeting
 Decision: Four changes to customer authentication and experience:
 (1) Middleware now protects `/customer/scheduler`, `/customer/faq`, and `/customer/my-bookings` — unauthenticated users are redirected to `/customer/login`.
