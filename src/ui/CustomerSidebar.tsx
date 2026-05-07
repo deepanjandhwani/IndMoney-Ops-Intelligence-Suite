@@ -16,6 +16,16 @@ import {
 import { useEffect, useState } from "react";
 import { createSupabaseBrowserClient } from "@/adapters/supabase/browser-client";
 
+let _audioCtx: AudioContext | null = null;
+function unlockAudioAutoplay() {
+  try {
+    if (!_audioCtx) {
+      _audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+    }
+    if (_audioCtx.state === "suspended") _audioCtx.resume();
+  } catch { /* unsupported browser */ }
+}
+
 const customerNav = [
   { href: "/customer/faq", label: "Mutual Fund FAQ", icon: HelpCircle },
   { href: "/customer/scheduler", label: "Speak to an Advisor", icon: Calendar },
@@ -101,10 +111,12 @@ export function CustomerSidebar() {
       <nav className="flex-1 overflow-y-auto px-2 py-2 flex flex-col gap-1">
         {customerNav.map((item) => {
           const active = pathname === item.href;
+          const needsAudioUnlock = item.href === "/customer/scheduler";
           return (
             <Link
               key={item.href}
               href={item.href}
+              onClick={needsAudioUnlock ? unlockAudioAutoplay : undefined}
               className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors no-underline ${
                 active
                   ? "bg-accent/10 text-accent-strong"
