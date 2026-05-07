@@ -202,12 +202,24 @@ function getSpeechRecognitionApi(): WebSpeechRecognitionConstructor | undefined 
 
 let pendingGreetingAudio: { base64: string | null; contentType: string; fallbackText?: string } | null = null;
 let greetingListenerAttached = false;
+let greetingDrainHandler: (() => void) | null = null;
 
 function drainPendingGreeting() {
   if (!pendingGreetingAudio) return;
   const { base64, contentType, fallbackText } = pendingGreetingAudio;
   pendingGreetingAudio = null;
   playTtsAudioImmediate(base64, contentType, fallbackText);
+}
+
+function resetGreetingListeners() {
+  if (greetingDrainHandler) {
+    document.removeEventListener("click", greetingDrainHandler);
+    document.removeEventListener("keydown", greetingDrainHandler);
+    document.removeEventListener("touchstart", greetingDrainHandler);
+    greetingDrainHandler = null;
+  }
+  greetingListenerAttached = false;
+  pendingGreetingAudio = null;
 }
 
 function playTtsAudio(base64: string | null, contentType: string, fallbackText?: string) {
@@ -234,6 +246,8 @@ function playTtsAudioImmediate(base64: string | null, contentType: string, fallb
 function playTtsAudioOrDefer(base64: string | null, contentType: string, fallbackText?: string) {
   if (typeof window === "undefined") return;
 
+  resetGreetingListeners();
+
   if (base64) {
     try {
       const audio = new Audio(`data:${contentType};base64,${base64}`);
@@ -241,18 +255,14 @@ function playTtsAudioOrDefer(base64: string | null, contentType: string, fallbac
       if (promise) {
         promise.catch(() => {
           pendingGreetingAudio = { base64, contentType, fallbackText };
-          if (!greetingListenerAttached) {
-            greetingListenerAttached = true;
-            const handler = () => {
-              drainPendingGreeting();
-              document.removeEventListener("click", handler);
-              document.removeEventListener("keydown", handler);
-              document.removeEventListener("touchstart", handler);
-            };
-            document.addEventListener("click", handler, { once: false });
-            document.addEventListener("keydown", handler, { once: false });
-            document.addEventListener("touchstart", handler, { once: false });
-          }
+          greetingListenerAttached = true;
+          greetingDrainHandler = () => {
+            drainPendingGreeting();
+            resetGreetingListeners();
+          };
+          document.addEventListener("click", greetingDrainHandler);
+          document.addEventListener("keydown", greetingDrainHandler);
+          document.addEventListener("touchstart", greetingDrainHandler);
         });
       }
       return;
