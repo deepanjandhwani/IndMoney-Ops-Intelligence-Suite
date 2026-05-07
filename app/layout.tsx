@@ -2,19 +2,17 @@ import type { Metadata } from "next";
 import { ReactNode } from "react";
 
 import "./globals.css";
-import { RoleAwareShell } from "@/ui/RoleAwareShell";
 
 export const metadata: Metadata = {
-  title: "INDmoney Ops Intelligence Suite",
-  description: "Phase 0 scaffold for the INDmoney Ops Intelligence Suite capstone"
+  title: "Groww Ops Intelligence Suite",
+  description:
+    "Grounded mutual fund and fee FAQ, advisor scheduling, Play Store review intelligence, and admin workflows for Groww operations."
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body>
-        <RoleAwareShell>{children}</RoleAwareShell>
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

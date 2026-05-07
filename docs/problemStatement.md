@@ -1,8 +1,8 @@
-# Investor Ops & Intelligence Suite for INDmoney
+# Investor Ops & Intelligence Suite for Groww
 
 ## 1. Project Vision
 
-INDmoney-like fintech platforms serve customers who need quick, reliable, and compliant support around mutual fund facts, fee explanations, account changes, statements, nominee updates, login issues, and advisor assistance.
+Groww-like fintech platforms serve customers who need quick, reliable, and compliant support around mutual fund facts, fee explanations, account changes, statements, nominee updates, login issues, and advisor assistance.
 
 Customers often ask questions such as:
 
@@ -14,7 +14,7 @@ Customers often ask questions such as:
 
 At the same time, public customer reviews on Google Play Store can reveal recurring issues such as nominee update confusion, login failures, statement download problems, SIP mandate issues, withdrawal delays, or fee-related confusion.
 
-The Investor Ops & Intelligence Suite for INDmoney is a unified AI-powered customer support and operations system that connects:
+The Investor Ops & Intelligence Suite for Groww is a unified AI-powered customer support and operations system that connects:
 
 - Official mutual fund knowledge
 - Static fee explanation logic
@@ -33,7 +33,7 @@ The product helps customers get facts-only answers and book advisor appointments
 
 ## 2. Product Goal
 
-Build a unified web application for INDmoney with two role-based experiences.
+Build a unified web application for Groww with two role-based experiences.
 
 ### Customer Experience
 
@@ -63,9 +63,9 @@ Admin users can:
 
 ## 3. Product Context
 
-The selected fintech product is: **INDmoney**
+The selected fintech product is: **Groww**
 
-The system should use INDmoney as the product context for:
+The system should use Groww as the product context for:
 
 - Google Play Store review ingestion
 - Review Pulse generation
@@ -84,7 +84,7 @@ For fee-related explanations, the system will use static approved fee explanatio
 
 ### 4.1 Customer Users
 
-Customers are retail users of INDmoney-like fintech products.
+Customers are retail users of Groww-like fintech products.
 
 They use the product to:
 
@@ -193,22 +193,22 @@ The HITL Approval Center and Evaluation Suite must be Admin-only.
 
 ### 7.1 Objective
 
-Build an automated review intelligence workflow that ingests public Google Play Store reviews for INDmoney, summarizes latest customer issues, tracks week-over-week review trends, and extracts the latest top customer themes.
+Build an automated review intelligence workflow that ingests public Google Play Store reviews for Groww, summarizes latest customer issues, tracks week-over-week review trends, and extracts the latest top customer themes.
 
 The latest top customer themes should be used by the Advisor Scheduler to make the customer greeting more context-aware.
 
 ### 7.2 Input
 
-The system should ingest reviews from the Google Play Store listing for INDmoney using `google-play-scraper`.
+The system should ingest reviews from the Google Play Store listing for Groww using `google-play-scraper`.
 
 Example configuration:
 
 ```json
 {
   "review_source": {
-    "product": "INDmoney",
+    "product": "Groww",
     "source_name": "Google Play Store Reviews",
-    "package_name": "com.indmoney",
+    "package_name": "com.nextbillion.groww",
     "source_type": "google_play_reviews",
     "scraper": "google-play-scraper"
   }
@@ -278,19 +278,19 @@ The system must automatically generate a weekly Review Pulse from the rolling la
 
 The Review Pulse must include:
 
-- Product name: INDmoney
+- Product name: Groww
 - Week or period covered
 - Total reviews analyzed
 - Average rating for the period
 - Maximum 5 themes
 - Top 3 themes
 - Latest top customer themes
-- 3 safe representative user quotes per top theme
+- 3 safe overall representative user quotes
 - A weekly summary of 250 words or less
 - Exactly 3 action ideas
 - Source metadata
 
-For top 3 themes, the system should extract up to 9 quotes total, with 3 quotes per theme.
+The system should extract exactly 3 representative quotes overall for the pulse.
 
 The latest top customer themes must be saved for use by the Advisor Scheduler.
 
@@ -299,7 +299,7 @@ The latest top customer themes must be saved for use by the Advisor Scheduler.
 ```json
 {
   "period": "Rolling 12 weeks ending 2026-04-26",
-  "product": "INDmoney",
+  "product": "Groww",
   "total_reviews_analyzed": 180,
   "average_rating": 3.2,
   "top_themes": [
@@ -449,7 +449,7 @@ These URLs may include:
 - Scheme Information Documents
 - AMFI educational pages
 - SEBI educational pages
-- Official INDmoney help/support pages
+- Official Groww help/support pages
 - Official statement and tax document help pages
 
 The app should use a Playwright scraper to scrape or ingest these predefined URLs and build the RAG knowledge base from the available content.
@@ -509,6 +509,26 @@ Each chunk should store metadata.
 }
 ```
 
+### 9.4.1 Fund Metadata and Filter Bar
+
+Each fund entry in `config/source_urls.json` includes structured metadata fields: `fund_type` (sectoral, index, diversified, etc.) and `risk_category` (extracted from Groww page riskometer during scraping). A `/api/smart-sync-faq/funds` GET endpoint serves this catalog.
+
+The customer UI includes an always-visible **Fund Filter Bar** with three filter dimensions:
+
+- **Fund Type** chips (e.g., Sectoral, Index, Diversified)
+- **Risk Profile** chips (e.g., Very High Risk, High Risk)
+- **Fund Name** chips (filtered by the above selections)
+
+Selected funds are sent as `selected_funds` in the FAQ POST body to scope ChromaDB retrieval, enabling cross-fund comparative queries without overwhelming retrieval.
+
+### 9.4.2 Conversation Context and Pronoun Resolution
+
+The FAQ supports multi-turn conversations. The client sends the last 4 conversation turns as `history` in the FAQ POST body. When a follow-up query contains pronouns (e.g., "What is the AUM of **this** fund?"), an LLM-powered query rewriting step resolves the pronouns into explicit terms before embedding and classification. The last 3 turns are also injected into the answer generation prompt for contextual coherence.
+
+### 9.4.3 Chat History Persistence
+
+Chat sessions and events are persisted. When Supabase credentials are configured, Supabase Postgres is used. Otherwise, a local SQLite database (`.data/chat-history.sqlite`) provides zero-cost, always-available persistence. The fallback is transparent to the UI and API routes.
+
 ### 9.5 Supported Customer Questions
 
 The Smart-Sync FAQ should answer factual questions about:
@@ -523,6 +543,7 @@ The Smart-Sync FAQ should answer factual questions about:
 - Capital gains statement download
 - Fee or charge explanation
 - General process questions based on official help pages
+- Cross-fund comparison queries (when funds are selected via filter bar)
 
 ### 9.6 Example Customer Question
 
@@ -561,7 +582,7 @@ The system must refuse questions such as:
 
 **Example refusal:**
 
-> I can't provide investment advice, return predictions, or handle personal account information. I can help with facts from approved sources, such as exit load, expense ratio, lock-in, benchmark, riskometer, fee explanation, or statement download steps.
+> I can't provide investment advice, return predictions, or handle personal account information. I can help with facts from approved sources, such as exit load, expense ratio, lock-in, benchmark, riskometer, fee explanation, or statement download steps. For investor education, see https://investor.sebi.gov.in/.
 
 ---
 
@@ -844,7 +865,7 @@ Customer-facing calendar/email confirmation is handled only after secure details
 ```json
 {
   "date": "2026-04-25",
-  "product": "INDmoney",
+  "product": "Groww",
   "topic": "Account Changes / Nominee",
   "slot": "Monday, 29 April 2026, 4:00 PM IST",
   "booking_code": "NL-A742",
@@ -873,7 +894,7 @@ Customer-facing calendar/email confirmation is handled only after secure details
 **The advisor email draft must include:**
 
 - Booking code
-- Product name: INDmoney
+- Product name: Groww
 - Topic
 - Confirmed slot
 - Statement that no PII was collected in the AI conversation
@@ -887,7 +908,7 @@ Subject: Advisor Pre-Booking — Account Changes / Nominee — NL-A742
 
 A tentative advisor booking has been created.
 
-Product: INDmoney
+Product: Groww
 Booking Code: NL-A742
 Topic: Account Changes / Nominee
 Slot: Monday, 29 April 2026, 4:00 PM IST
@@ -1063,7 +1084,7 @@ Check:
 - Review Pulse is under 250 words
 - Maximum 5 themes are generated
 - Exactly 3 top themes are identified
-- 3 representative quotes per top theme are extracted
+- Exactly 3 overall representative quotes are extracted
 - Exactly 3 action ideas are generated
 - PII is masked
 - Review Trends Dashboard compares current week vs previous week
@@ -1246,7 +1267,7 @@ The manifest should include the 15 predefined official URLs with:
 
 The final capstone is successful if:
 
-1. INDmoney is clearly used as the selected fintech product.
+1. Groww is clearly used as the selected fintech product.
 2. The product serves both Customer and Admin users.
 3. Customer-facing flows are separated from Admin-only workflows.
 4. Review ingestion happens weekly from Google Play Store reviews through GitHub Actions.
@@ -1280,4 +1301,4 @@ The final capstone is successful if:
 
 ## 17. One-Line Problem Statement
 
-Build a unified AI-powered Investor Ops & Intelligence Suite for INDmoney that helps customers get facts-only mutual fund support from predefined official sources, understand approved fee explanations, and book advisor appointments through chat or voice, while enabling Admin users to ingest Google Play reviews weekly through GitHub Actions, monitor rolling 12-week review trends, manage advisor booking operations through synced Google Sheet and HITL records, and verify reliability through structured evaluations.
+Build a unified AI-powered Investor Ops & Intelligence Suite for Groww that helps customers get facts-only mutual fund support from predefined official sources, understand approved fee explanations, and book advisor appointments through chat or voice, while enabling Admin users to ingest Google Play reviews weekly through GitHub Actions, monitor rolling 12-week review trends, manage advisor booking operations through synced Google Sheet and HITL records, and verify reliability through structured evaluations.

@@ -1,0 +1,222 @@
+{
+  "sources": [
+    {
+      "source_id": "src_001",
+      "url": "https://groww.in/mutual-funds/hdfc-defence-fund-direct-growth",
+      "source_type": "official_url",
+      "content_type": "scheme_fact",
+      "title": "HDFC Defence Fund Direct Growth",
+      "scheme_name": "HDFC Defence Fund Direct Growth",
+      "fund_type": "sectoral",
+      "risk_category": "Very High Risk",
+      "last_checked": "2026-05-01",
+      "scrape_status": "pending"
+    },
+    {
+      "source_id": "src_002",
+      "url": "https://groww.in/mutual-funds/hdfc-transportation-and-logistics-fund-direct-growth",
+      "source_type": "official_url",
+      "content_type": "scheme_fact",
+      "title": "HDFC Transportation and Logistics Fund Direct Growth",
+      "scheme_name": "HDFC Transportation and Logistics Fund Direct Growth",
+      "fund_type": "sectoral",
+      "risk_category": "Very High Risk",
+      "last_checked": "2026-05-01",
+      "scrape_status": "pending"
+    },
+    {
+      "source_id": "src_003",
+      "url": "https://groww.in/mutual-funds/hdfc-pharma-and-healthcare-fund-direct-growth",
+      "source_type": "official_url",
+      "content_type": "scheme_fact",
+      "title": "HDFC Pharma and Healthcare Fund Direct Growth",
+      "scheme_name": "HDFC Pharma and Healthcare Fund Direct Growth",
+      "fund_type": "sectoral",
+      "risk_category": "Very High Risk",
+      "last_checked": "2026-05-01",
+      "scrape_status": "pending"
+    },
+    {
+      "source_id": "src_004",
+      "url": "https://groww.in/mutual-funds/hdfc-manufacturing-fund-direct-growth",
+      "source_type": "official_url",
+      "content_type": "scheme_fact",
+      "title": "HDFC Manufacturing Fund Direct Growth",
+      "scheme_name": "HDFC Manufacturing Fund Direct Growth",
+      "fund_type": "sectoral",
+      "risk_category": "Very High Risk",
+      "last_checked": "2026-05-01",
+      "scrape_status": "pending"
+    },
+    {
+      "source_id": "src_005",
+      "url": "https://groww.in/mutual-funds/hdfc-mid-cap-opportunities-fund-direct-growth",
+      "source_type": "official_url",
+      "content_type": "scheme_fact",
+      "title": "HDFC Mid-Cap Fund Direct Plan Growth Option",
+      "scheme_name": "HDFC Mid-Cap Fund Direct Plan Growth Option",
+      "fund_type": "diversified",
+      "risk_category": "Very High Risk",
+      "last_checked": "2026-05-01",
+      "scrape_status": "pending"
+    },
+    {
+      "source_id": "src_006",
+      "url": "https://groww.in/mutual-funds/hdfc-nifty-midcap-150-index-fund-direct-growth",
+      "source_type": "official_url",
+      "content_type": "scheme_fact",
+      "title": "HDFC Nifty Midcap 150 Index Fund Direct Growth",
+      "scheme_name": "HDFC Nifty Midcap 150 Index Fund Direct Growth",
+      "fund_type": "index",
+      "risk_category": "Very High Risk",
+      "last_checked": "2026-05-01",
+      "scrape_status": "pending"
+    },
+    {
+      "source_id": "src_007",
+      "url": "https://groww.in/mutual-funds/hdfc-nifty-smallcap-250-index-fund-direct-growth",
+      "source_type": "official_url",
+      "content_type": "scheme_fact",
+      "title": "HDFC Nifty Smallcap 250 Index Fund Direct Growth",
+      "scheme_name": "HDFC Nifty Smallcap 250 Index Fund Direct Growth",
+      "fund_type": "index",
+      "risk_category": "Very High Risk",
+      "last_checked": "2026-05-01",
+      "scrape_status": "pending"
+    },
+    {
+      "source_id": "src_008",
+      "url": "https://groww.in/mutual-funds/hdfc-nifty-next-50-index-fund-direct-growth",
+      "source_type": "official_url",
+      "content_type": "scheme_fact",
+      "title": "HDFC Nifty Next 50 Index Fund Direct Growth",
+      "scheme_name": "HDFC Nifty Next 50 Index Fund Direct Growth",
+      "fund_type": "index",
+      "risk_category": "Very High Risk",
+      "last_checked": "2026-05-01",
+      "scrape_status": "pending"
+    },
+    {
+      "source_id": "src_009",
+      "url": "https://groww.in/mutual-funds/hdfc-nifty-100-equal-weight-index-fund-direct-growth",
+      "source_type": "official_url",
+      "content_type": "scheme_fact",
+      "title": "HDFC Nifty 100 Equal Weight Index Fund Direct Growth",
+      "scheme_name": "HDFC Nifty 100 Equal Weight Index Fund Direct Growth",
+      "fund_type": "index",
+      "risk_category": "Very High Risk",
+      "last_checked": "2026-05-01",
+      "scrape_status": "pending"
+    },
+    {
+      "source_id": "src_010",
+      "url": "https://groww.in/mutual-funds/hdfc-small-cap-fund-direct-growth",
+      "source_type": "official_url",
+      "content_type": "scheme_fact",
+      "title": "HDFC Small Cap Fund Direct Growth Option",
+      "scheme_name": "HDFC Small Cap Fund Direct Growth Option",
+      "fund_type": "diversified",
+      "risk_category": "Very High Risk",
+      "last_checked": "2026-05-01",
+      "scrape_status": "pending"
+    },
+    {
+      "source_id": "src_011",
+      "url": "https://groww.in/mutual-funds/hdfc-infrastructure-fund-direct-growth",
+      "source_type": "official_url",
+      "content_type": "scheme_fact",
+      "title": "HDFC Infrastructure Fund Direct Plan Growth Option",
+      "scheme_name": "HDFC Infrastructure Fund Direct Plan Growth Option",
+      "fund_type": "sectoral",
+      "risk_category": "Very High Risk",
+      "last_checked": "2026-05-01",
+      "scrape_status": "pending"
+    },
+    {
+      "source_id": "src_012",
+      "url": "https://groww.in/mutual-funds/hdfc-nifty50-equal-weight-index-fund-direct-growth",
+      "source_type": "official_url",
+      "content_type": "scheme_fact",
+      "title": "HDFC Nifty50 Equal Weight Index Fund Direct Growth",
+      "scheme_name": "HDFC Nifty50 Equal Weight Index Fund Direct Growth",
+      "fund_type": "index",
+      "risk_category": "Very High Risk",
+      "last_checked": "2026-05-01",
+      "scrape_status": "pending"
+    },
+    {
+      "source_id": "src_013",
+      "url": "https://groww.in/mutual-funds/hdfc-value-fund-direct-plan-growth",
+      "source_type": "official_url",
+      "content_type": "scheme_fact",
+      "title": "HDFC Value Fund Direct Plan Growth",
+      "scheme_name": "HDFC Value Fund Direct Plan Growth",
+      "fund_type": "diversified",
+      "risk_category": "Very High Risk",
+      "last_checked": "2026-05-01",
+      "scrape_status": "pending"
+    },
+    {
+      "source_id": "src_014",
+      "url": "https://groww.in/mutual-funds/hdfc-banking-financial-services-fund-direct-growth",
+      "source_type": "official_url",
+      "content_type": "scheme_fact",
+      "title": "HDFC Banking & Financial Services Fund Direct Growth",
+      "scheme_name": "HDFC Banking & Financial Services Fund Direct Growth",
+      "fund_type": "sectoral",
+      "risk_category": "Very High Risk",
+      "last_checked": "2026-05-01",
+      "scrape_status": "pending"
+    },
+    {
+      "source_id": "src_015",
+      "url": "https://investor.sebi.gov.in/pdf/Frequently-Asked-Questions-about-Mutual-Funds-2.pdf",
+      "source_type": "official_url",
+      "content_type": "regulatory_education",
+      "title": "SEBI — Mutual Fund Riskometer & Investor FAQs",
+      "topic": "riskometer",
+      "last_checked": "2026-05-01",
+      "scrape_status": "pending"
+    },
+    {
+      "source_id": "src_016",
+      "url": "https://www.amfiindia.com/investor-corner/knowledge-center/elss-faq.html",
+      "source_type": "official_url",
+      "content_type": "regulatory_education",
+      "title": "AMFI — ELSS Lock-in & Tax FAQ",
+      "topic": "lock_in",
+      "last_checked": "2026-05-01",
+      "scrape_status": "pending"
+    },
+    {
+      "source_id": "src_017",
+      "url": "https://www.amfiindia.com/investor-corner/knowledge-center/exit-load-meaning.html",
+      "source_type": "official_url",
+      "content_type": "regulatory_education",
+      "title": "AMFI — Exit Load Meaning & Application",
+      "topic": "exit_load",
+      "last_checked": "2026-05-01",
+      "scrape_status": "pending"
+    },
+    {
+      "source_id": "src_018",
+      "url": "https://groww.in/p/how-to-download-capital-gain-statement",
+      "source_type": "official_url",
+      "content_type": "help_page",
+      "title": "Groww — Download Capital Gains Statement",
+      "topic": "capital_gains_statement",
+      "last_checked": "2026-05-01",
+      "scrape_status": "pending"
+    },
+    {
+      "source_id": "src_019",
+      "url": "https://groww.in/p/nominee-update",
+      "source_type": "official_url",
+      "content_type": "help_page",
+      "title": "Groww — Update Nominee on Mutual Fund Investments",
+      "topic": "nominee",
+      "last_checked": "2026-05-01",
+      "scrape_status": "pending"
+    }
+  ]
+}

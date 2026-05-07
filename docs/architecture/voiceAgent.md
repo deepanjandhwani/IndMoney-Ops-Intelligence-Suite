@@ -46,41 +46,45 @@
 
 | Component | Selected | Justification |
 |---|---|---|
-| **STT** | **Deepgram** (credit-limited free credits) | Cross-browser consistency, confidence scores for low-confidence retry logic (edgeCase.md), keyword boosting for financial terms, WebSocket streaming for real-time feel. $200 credits cover ~45 hours — far more than needed for capstone development + demo, but this must be flagged as credit-limited. |
-| **TTS** | **Browser SpeechSynthesis** (free) | Cost: $0 with no credit consumption. Latency is lower (local synthesis). Quality is acceptable for a capstone demo — the voice reads back short confirmation strings, not long passages. Saves Deepgram credits entirely for STT. |
+| **STT** | **Deepgram** (credit-limited free credits) | Cross-browser consistency, confidence scores for low-confidence retry logic (edgeCase.md), keyword boosting for financial terms. $200 credits cover ~45 hours — far more than needed for capstone development + demo, but this must be flagged as credit-limited. |
+| **TTS** | **Deepgram Aura** (credit-limited free credits, ADR-004a) | Natural voice quality, consistent across all clients (server-side), configurable pronunciation for booking codes and IST times. Combined STT+TTS credit usage remains well within $200 pool. Replaces Browser SpeechSynthesis which read codes/times incorrectly. |
 | **Fallback STT** | **Web Speech API** | If Deepgram credits are exhausted or API is unreachable, fall back to Web Speech API in Chrome/Edge. Degrade gracefully with a banner: "Voice quality may vary in this browser." |
+| **Fallback TTS** | **Browser SpeechSynthesis** (free, ADR-004a) | If Deepgram credits are exhausted, fall back to Browser SpeechSynthesis ($0). Voice format pipeline still improves output quality. |
 
-### 1.4 Audio Streaming Design
+### 1.4 Audio Pipeline Design (HTTP Batch — ADR-024)
+
+> **Note:** The original design specified WebSocket streaming. ADR-024 changed this to HTTP batch because Vercel serverless functions do not support persistent WebSocket connections. See ADR-024 in decisions.md for full rationale.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                        Browser Client                           │
 │                                                                 │
-│  ┌──────────┐    PCM audio    ┌──────────────┐                 │
-│  │ getUserMedia ──────────────▶ AudioWorklet  │                 │
-│  │ (mic)     │   (16kHz mono) │ (chunk 250ms)│                 │
-│  └──────────┘                 └──────┬───────┘                 │
-│                                      │ binary frames           │
-│  ┌──────────────────────────────────▼────────────────────┐     │
-│  │              WebSocket Client                          │     │
-│  │  ws://server/api/voice/stream                          │     │
-│  │  ▲ receives: { transcript, is_final, confidence }      │     │
-│  └──┬─────────────────────────────────────────────────────┘     │
+│  ┌──────────┐   hold-to-talk  ┌───────────────┐               │
+│  │ getUserMedia ──────────────▶ MediaRecorder  │               │
+│  │ (mic)     │                │ (webm/opus)   │               │
+│  └──────────┘                 └──────┬────────┘               │
+│                                      │ complete audio blob     │
+│  ┌───────────────────────────────────▼──────────────────┐      │
+│  │              HTTP POST                                │      │
+│  │  /api/scheduler/voice-turn                            │      │
+│  │  Body: multipart/form-data { audio, context }         │      │
+│  │  ▼ receives: { transcript, response, audio_base64 }   │      │
+│  └──┬────────────────────────────────────────────────────┘      │
 │     │                                                           │
 │  ┌──▼──────────────┐                                           │
-│  │ SpeechSynthesis  │  ◄── TTS output (booking code,           │
-│  │ (browser-native) │      confirmations, slot readback)        │
+│  │ AudioContext     │  ◄── Decode + play base64 audio          │
+│  │ (playback)      │      (Deepgram Aura TTS output)           │
 │  └─────────────────┘                                           │
 └─────────────────────────────────────────────────────────────────┘
-          │ WebSocket (binary audio up, JSON transcript down)
+          │ HTTP POST (audio up, JSON + base64 audio down)
           ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                      Next.js API Route                          │
-│                   /api/voice/stream                              │
+│              Next.js API Route (maxDuration: 30s)               │
+│                /api/scheduler/voice-turn                         │
 │                                                                 │
 │  ┌──────────────┐    audio    ┌───────────────┐                │
-│  │ WS Handler   ├────────────▶│ Deepgram SDK  │                │
-│  │              │◀────────────┤ (WebSocket)   │                │
+│  │ Route Handler ├───────────▶│ Deepgram REST │                │
+│  │              │◀────────────┤ (STT: nova-2) │                │
 │  │              │  transcript │               │                │
 │  └──────┬───────┘             └───────────────┘                │
 │         │ final transcript                                      │
@@ -93,8 +97,19 @@
 │  └──────┬───────┘                                              │
 │         │ response text                                         │
 │  ┌──────▼───────┐                                              │
-│  │ WS Handler   │──▶ JSON { text, state, booking_code? }       │
-│  └──────────────┘    back to browser                           │
+│  │ Voice Format │  ← formatForVoice + buildTtsText             │
+│  └──────┬───────┘                                              │
+│         │ voice-friendly text                                   │
+│  ┌──────▼───────┐    text     ┌───────────────┐                │
+│  │ Route Handler ├───────────▶│ Deepgram REST │                │
+│  │              │◀────────────┤ (TTS: Aura)   │                │
+│  │              │  audio bytes│               │                │
+│  └──────┬───────┘             └───────────────┘                │
+│         │                                                       │
+│  ┌──────▼───────┐                                              │
+│  │ Response     │──▶ JSON { transcript, response,              │
+│  │              │        audio_base64, context }                │
+│  └──────────────┘                                              │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -102,13 +117,13 @@
 
 | Parameter | Value | Reason |
 |---|---|---|
-| Sample rate | 16 kHz | Deepgram recommended for speech; reduces bandwidth |
-| Channels | 1 (mono) | Voice only, stereo unnecessary |
-| Encoding | Linear16 (PCM) | Lossless, lowest latency |
-| Chunk size | 250 ms | Balance between latency and network overhead |
-| Deepgram model | `nova-2` | Best accuracy on general English, free tier eligible |
-| Deepgram options | `{ smart_format: true, punctuate: true, interim_results: true, utterance_end_ms: 1500, keywords: ["ELSS:2", "SIP:2", "nominee:2", "KYC:2"] }` | Financial term boosting, interim results for UI feedback |
-| Silence timeout | 1500 ms (`utterance_end_ms`) | Triggers end-of-utterance, matches natural speech pause |
+| Client recording | MediaRecorder (webm/opus) | Browser-native, no AudioWorklet needed |
+| UX pattern | Hold-to-talk | Required for batch — no interim transcripts |
+| Deepgram STT model | `nova-2` | Best accuracy on general English, free tier eligible |
+| Deepgram STT options | `{ smart_format: true, punctuate: true, keywords: ["ELSS:2", "SIP:2", "nominee:2", "KYC:2"] }` | Financial term boosting |
+| Deepgram TTS model | `aura-asteria-en` | Natural voice, consistent across clients (ADR-004a) |
+| Server timeout | 30s (`maxDuration`) | Covers STT (~1s) + engine (~0.1s) + TTS (~0.5s) with margin |
+| Typical round-trip | ~1-2s | Audio upload + STT + engine + TTS + response |
 
 **Fallback activation (Web Speech API):**
 
@@ -121,7 +136,7 @@ function selectSTTProvider(): "deepgram" | "web_speech_api" {
 }
 ```
 
-When fallback activates, audio stays in the browser — no server WebSocket is opened. The browser's `SpeechRecognition` API returns transcript text directly, which is sent to the state machine via a regular HTTP POST to `/api/scheduler/message`.
+When fallback activates, audio stays in the browser — no server request is made for STT. The browser's `SpeechRecognition` API returns transcript text directly, which is sent to the state machine via a regular HTTP POST to `/api/scheduler/message`. TTS falls back to Browser SpeechSynthesis (ADR-004a).
 
 ---
 
@@ -299,7 +314,7 @@ async function processMessage(
 ### 3.3 Intent Classification Prompt
 
 ```
-You are an intent classifier for the INDmoney advisor scheduler.
+You are an intent classifier for the Groww advisor scheduler.
 
 Classify the user's message into exactly ONE of these intents:
 - book_new: User wants to book a new advisor appointment
@@ -436,11 +451,13 @@ PII detection in voice transcripts uses **regex patterns only, not LLM.** This i
 
 | PII Type | Regex Pattern | Example Caught |
 |---|---|---|
-| Phone number | `\b\d{10}\b`, `\+91\s?\d{10}` | "my number is 9876543210" |
+| Phone number | `\b(?:\+?91[\s-]?)?[6-9]\d[\d\s-]{7,9}\d\b` | "my number is 9876543210" |
 | Email | `\b[\w.-]+@[\w.-]+\.\w+\b` | "email me at john@gmail.com" |
+| Obfuscated email | `\b\w+\s*\[at\]\s*\w+\s*\[dot\]\s*\w+` | "john [at] gmail [dot] com" |
 | PAN | `\b[A-Z]{5}\d{4}[A-Z]\b` | "my PAN is ABCDE1234F" |
-| Aadhaar | `\b\d{4}\s?\d{4}\s?\d{4}\b` | "Aadhaar number 1234 5678 9012" |
+| Aadhaar | `\b[2-9]\d{3}[\s-]*\d{4}[\s-]*\d{4}\b` | "Aadhaar number 2345  6789  0123" |
 | Account number | `\b\d{9,18}\b` (in financial context) | "account number 123456789012" |
+| Full name | `name is/: First Last` or `I am First Last` | "I am John Doe, what is exit load?" |
 
 ### 5.3 Voice PII Pipeline
 
@@ -639,14 +656,20 @@ Per rules.md Booking Rules, the booking code appears in:
 
 ### 8.1 Voice-Specific Errors
 
+> **Updated per ADR-024:** Voice uses HTTP batch transport, not WebSocket. Error patterns reflect the batch model.
+
 | Error | Detection | Response | Recovery |
 |---|---|---|---|
-| **Deepgram WebSocket disconnect** | WebSocket `close` / `error` event | "I'm having trouble hearing you. Let me try again." | Reconnect WebSocket (max 3 retries). If exhausted, fall back to Web Speech API. |
-| **Low confidence transcription** | Deepgram `confidence < 0.5` on final result | "I didn't quite catch that. Could you please repeat?" | Stay in current state. Retry count incremented. After 3 low-confidence retries, suggest switching to chat: "For a smoother experience, you can also type your response in the chat." |
-| **User silence / timeout** | No `utterance_end` event for 15 seconds | "Are you still there? You can say something or I can start over." | After 30s total silence, end voice session with: "It seems like you've stepped away. Feel free to come back anytime." |
+| **Deepgram STT API unreachable** | `/voice-turn` returns `{ error: "stt_unavailable" }` | Client shows banner: "Using browser voice — quality may vary." | Fall back to Web Speech API (browser-side STT) + Browser SpeechSynthesis (local TTS). Voice input sent as text via `POST /api/scheduler/message`. |
+| **Deepgram STT returns empty transcript** | Deepgram REST response has empty/null transcript | "I didn't catch that. Could you hold the mic button and try again?" | Stay in current state. Retry count incremented. After 3 failures, suggest switching to chat. |
+| **Low confidence transcription** | Deepgram `confidence < 0.5` on result | "I didn't quite catch that. Could you please repeat?" | Stay in current state. Retry count incremented. After 3 low-confidence retries, suggest switching to chat: "For a smoother experience, you can also type your response in the chat." |
+| **Deepgram TTS fails** | TTS API error in `/voice-turn` | Return JSON response without `audio_base64`. Client displays text response and falls back to Browser SpeechSynthesis for this turn. | Non-blocking — text response is always available. |
+| **Deepgram credits exhausted** | STT or TTS returns 402/quota error | Client switches to Web Speech API + Browser SpeechSynthesis permanently for the session. Admin dashboard shows warning. | Per ADR-004 and ADR-004a fallback strategy. |
+| **Voice-turn timeout** | `/voice-turn` exceeds 30s `maxDuration` | Client shows error: "That took too long. Please try again or type your response." | Retry once. If still timing out, suggest chat. |
 | **Booking code spoken unclearly** | Code validation fails against DB | "I couldn't find that booking code. Could you spell it out letter by letter?" | Read back what was heard: "I heard [X]. Is that correct?" (per edgeCase.md) |
 | **Microphone permission denied** | `getUserMedia` throws `NotAllowedError` | "I need microphone access to use voice. Please allow microphone access in your browser settings, or you can use the chat instead." | Offer chat fallback. Do not retry permission request. |
 | **Browser unsupported (fallback STT)** | `window.SpeechRecognition` undefined + Deepgram unavailable | "Voice is not supported in this browser. Please use Chrome or Edge, or use the chat instead." | Redirect to chat interface. |
+| **LLM fallback timeout** | Gemini call exceeds 5s timeout (ADR-025) | "I didn't quite understand. Could you rephrase?" | Treated as regex miss — ask user to clarify. No retry of LLM call. |
 
 ### 8.2 Shared Errors (Chat + Voice)
 
@@ -680,80 +703,84 @@ stateDiagram-v2
 
 ## 9. LLM Calls Per Booking Conversation
 
-### 9.1 Call Breakdown by Intent
+> **Updated per ADR-025:** The current implementation uses deterministic regex for intent classification and day resolution (0 LLM calls in the typical case). LLM calls are a structured-output fallback via Gemini 2.5 Flash-Lite, firing only when regex returns null/unclear. Feature-flagged via `SCHEDULER_LLM_FALLBACK=true`. Implemented in `src/services/scheduler/llm-fallback.ts` (intent, confidence >= 0.6 threshold) and `llm-day-resolution.ts` (date parsing). Both have 5s timeouts and return null on failure, so the deterministic path is always the safe default.
+
+### 9.1 Deterministic-First Strategy (ADR-025)
+
+```
+User input → regex parser (intent or day)
+    ├── match found → use it (0 LLM calls)
+    └── no match → Gemini Flash-Lite fallback (1 LLM call, ~80 tokens)
+        ├── valid result → use it
+        └── null/timeout → ask user to clarify (same as regex miss)
+```
+
+Two fallback points exist:
+1. **Intent classification** — when `classifySchedulerIntent()` returns `"unclear"`
+2. **Day resolution** — when `resolveDayPreference()` returns `null`
+
+### 9.2 Call Breakdown by Intent
 
 **Intent: `book_new` (most common path)**
 
-| State | LLM Call? | Model | Purpose | Tokens (est.) |
+| State | Regex succeeds | Regex fails (LLM fallback) | Model | Tokens (est.) |
 |---|---|---|---|---|
-| `greeting` | No | — | Template + DB read for themes | 0 |
-| `intent_classification` | **Yes (1)** | Gemini 2.5 Flash-Lite | Classify intent | ~80 |
-| `topic_collection` | No | — | Keyword matching | 0 |
-| `slot_selection` | No | — | Calendar API read + template | 0 |
-| `confirmation` | No | — | Template with IST format | 0 |
-| `tentative_booking_created` | No | — | Template + DB/MCP writes | 0 |
-| **Total** | **1 LLM call** | | | **~80 tokens** |
+| `greeting` | No LLM | No LLM | — | 0 |
+| `intent_classification` | No LLM (regex match) | **1 call** (fallback) | Gemini 2.5 Flash-Lite | 0 or ~80 |
+| `topic_collection` | No LLM | No LLM | — | 0 |
+| `time_collection` | No LLM (regex match) | **1 call** (fallback) | Gemini 2.5 Flash-Lite | 0 or ~80 |
+| `slot_selection` | No LLM | No LLM | — | 0 |
+| `confirmation` | No LLM | No LLM | — | 0 |
+| **Typical total** | **0 LLM calls** | | | **0 tokens** |
+| **Worst-case total** | **2 LLM calls** | | | **~160 tokens** |
 
 **Intent: `reschedule`**
 
-| State | LLM Call? | Model | Purpose | Tokens (est.) |
-|---|---|---|---|---|
-| `greeting` | No | — | Template + DB read | 0 |
-| `intent_classification` | **Yes (1)** | Gemini 2.5 Flash-Lite | Classify intent | ~80 |
-| `booking_code_collection` | No | — | DB lookup validation | 0 |
-| `topic_collection` | No | — | Keyword matching | 0 |
-| `slot_selection` | No | — | Calendar API read + template | 0 |
-| `confirmation` | No | — | Template with IST format | 0 |
-| `tentative_booking_created` | No | — | Template + DB/MCP writes | 0 |
-| **Total** | **1 LLM call** | | | **~80 tokens** |
+| Scenario | LLM Calls | Tokens |
+|---|---|---|
+| Typical (regex matches intent + day) | **0** | 0 |
+| Worst case (both regex fail) | **2** | ~160 |
 
 **Intent: `cancel`**
 
-| State | LLM Call? | Model | Purpose | Tokens (est.) |
-|---|---|---|---|---|
-| `greeting` | No | — | Template + DB read | 0 |
-| `intent_classification` | **Yes (1)** | Gemini 2.5 Flash-Lite | Classify intent | ~80 |
-| `booking_code_collection` | No | — | DB lookup validation | 0 |
-| `cancellation_confirm` | No | — | Template | 0 |
-| `cancellation_complete` | No | — | Template + DB/MCP writes | 0 |
-| **Total** | **1 LLM call** | | | **~80 tokens** |
+| Scenario | LLM Calls | Tokens |
+|---|---|---|
+| Typical | **0** | 0 |
+| Worst case (intent regex fails) | **1** | ~80 |
 
 **Intent: `what_to_prepare`**
 
-| State | LLM Call? | Model | Purpose | Tokens (est.) |
-|---|---|---|---|---|
-| `greeting` | No | — | Template + DB read | 0 |
-| `intent_classification` | **Yes (1)** | Gemini 2.5 Flash-Lite | Classify intent | ~80 |
-| `topic_collection_optional` | No | — | Keyword matching | 0 |
-| `preparation_guidance` | **Yes (1)** | Gemini 2.5 Flash | Generate topic-specific prep tips | ~200 |
-| **Total** | **2 LLM calls** | | | **~280 tokens** |
+| Scenario | LLM Calls | Tokens |
+|---|---|---|
+| Typical (regex matches intent) | **1** (preparation guidance generation) | ~200 |
+| Worst case (intent regex fails) | **2** (fallback + guidance) | ~280 |
 
 **Intent: `check_availability`**
 
-| State | LLM Call? | Model | Purpose | Tokens (est.) |
-|---|---|---|---|---|
-| `greeting` | No | — | Template + DB read | 0 |
-| `intent_classification` | **Yes (1)** | Gemini 2.5 Flash-Lite | Classify intent | ~80 |
-| `availability_check` | No | — | Calendar API read + template | 0 |
-| **Total** | **1 LLM call** | | | **~80 tokens** |
+| Scenario | LLM Calls | Tokens |
+|---|---|---|
+| Typical | **0** | 0 |
+| Worst case (intent regex fails) | **1** | ~80 |
 
-### 9.2 Summary Table
+### 9.3 Summary Table
 
-| Intent | LLM Calls | Model | Est. Tokens | Notes |
-|---|---|---|---|---|
-| `book_new` | **1** | Gemini 2.5 Flash-Lite | ~80 | Intent classification only |
-| `reschedule` | **1** | Gemini 2.5 Flash-Lite | ~80 | Intent classification only |
-| `cancel` | **1** | Gemini 2.5 Flash-Lite | ~80 | Intent classification only |
-| `what_to_prepare` | **2** | Gemini 2.5 Flash-Lite + Gemini 2.5 Flash | ~280 | Intent classification + guidance generation |
-| `check_availability` | **1** | Gemini 2.5 Flash-Lite | ~80 | Intent classification only |
+| Intent | Typical LLM Calls | Worst-Case LLM Calls | Typical Tokens | Worst-Case Tokens | Notes |
+|---|---|---|---|---|---|
+| `book_new` | **0** | **2** | 0 | ~160 | Regex handles "book a call" + "tomorrow" |
+| `reschedule` | **0** | **2** | 0 | ~160 | Regex handles "reschedule" + "Monday" |
+| `cancel` | **0** | **1** | 0 | ~80 | No day resolution needed |
+| `what_to_prepare` | **1** | **2** | ~200 | ~280 | Guidance generation always uses Flash |
+| `check_availability` | **0** | **1** | 0 | ~80 | No day resolution needed |
 
-### 9.3 Retry Overhead
+### 9.4 Retry Overhead
 
 | Scenario | Additional LLM Calls | When |
 |---|---|---|
-| Intent unclear (confidence < 0.6) | +1 per retry (max 2 retries) | User's initial message is ambiguous |
-| LLM returns malformed JSON | +1 (single retry) | JSON parse error on classification response |
+| LLM fallback returns "unclear" (confidence < 0.6) | 0 (ask user to clarify, no retry) | Ambiguous message even for LLM |
+| LLM returns malformed JSON | 0 (treated as null, ask user to clarify) | JSON parse error |
+| LLM times out (5s) | 0 (treated as null, ask user to clarify) | API latency spike |
 | Advice request refused | 0 | Refusal is template-based, no LLM call |
+| Feature flag off (`SCHEDULER_LLM_FALLBACK_ENABLED=false`) | 0 always | All LLM fallback disabled |
 
 **Worst case for `book_new` with 2 intent retries:** 3 LLM calls, ~240 tokens.
 
@@ -774,7 +801,7 @@ At 1–2 LLM calls per booking conversation using Gemini 2.5 Flash-Lite (15 RPM,
 ### 10.1 Intent Classification Prompt
 
 ```
-You are an intent classifier for the INDmoney advisor scheduling system.
+You are an intent classifier for the Groww advisor scheduling system.
 
 The user has sent a message during a booking conversation.
 Classify the message into exactly ONE of these intents:
@@ -805,7 +832,7 @@ Rules:
 ### 10.2 Preparation Guidance Prompt
 
 ```
-You are a helpful assistant for INDmoney advisor appointments.
+You are a helpful assistant for Groww advisor appointments.
 
 The user has a {topic} consultation scheduled. Provide 3-5 concise
 preparation tips — what they should have ready or review before the call.
@@ -822,7 +849,7 @@ Rules:
 Return JSON:
 {
   "tips": [
-    "Review your current SIP setup in the INDmoney app before the call.",
+    "Review your current SIP setup in the Groww app before the call.",
     "List any specific questions about mandate failures or payment issues.",
     "Personal details can be submitted through the secure link after booking."
   ]
@@ -885,7 +912,8 @@ const ADVICE_REFUSAL =
   `I can't provide investment advice, return predictions, or handle ` +
   `personal account information. I can help with facts from approved ` +
   `sources, such as exit load, expense ratio, lock-in, benchmark, ` +
-  `riskometer, fee explanation, or statement download steps.`;
+  `riskometer, fee explanation, or statement download steps. ` +
+  `For investor education, see https://investor.sebi.gov.in/.`;
 ```
 
 ---
@@ -1008,36 +1036,39 @@ interface ModeSwitch {
 
 ## 13. File Structure
 
+> **Updated to reflect actual implementation file names and ADR-024 (HTTP batch voice).**
+
 ```
 src/services/
 ├── scheduler/
-│   ├── stateMachine.ts        # Shared state machine (chat + voice)
-│   ├── intentClassifier.ts    # LLM-based intent classification
-│   ├── topicMatcher.ts        # Keyword-based topic matching
-│   ├── slotFormatter.ts       # IST date/time formatting
-│   ├── bookingCodeGenerator.ts
+│   ├── state-machine.ts       # Shared state machine (chat + voice)
+│   ├── topics.ts              # Regex intent classification + topic matching + STT phonetics
+│   ├── time-preference.ts     # Day/time parsing + day resolution
+│   ├── format.ts              # IST date/time formatting
+│   ├── booking-code.ts        # Booking code generation (LL-LDDD)
+│   ├── booking-lifecycle.ts   # Booking creation, reschedule, cancel orchestration
 │   ├── greeting.ts            # Theme-aware greeting builder
-│   └── piiFilter.ts           # Regex PII masking (shared with Module A)
+│   ├── voice-format.ts        # formatForVoice() + buildTtsText() for voice output
+│   ├── llm-fallback.ts        # Gemini structured output fallback (ADR-025)
+│   ├── llm-day-resolution.ts  # Gemini day resolution fallback (ADR-025)
+│   ├── types.ts               # All scheduler types and interfaces
+│   └── server.ts              # Dependency injection factory
+
+src/services/safety/
+├── pii.ts                     # Regex PII masking (shared with Module A + voice)
 
 src/adapters/
-├── deepgram.ts                # Deepgram STT WebSocket adapter
-├── speechSynthesis.ts         # Browser TTS adapter
+├── deepgram/
+│   └── index.ts               # Deepgram HTTP adapter: STT (nova-2) + TTS (Aura)
 
-src/app/api/
-├── voice/
-│   └── stream/
-│       └── route.ts           # WebSocket endpoint for voice streaming
-├── scheduler/
-│   └── message/
-│       └── route.ts           # HTTP POST endpoint for chat messages
+app/api/scheduler/
+├── message/
+│   └── route.ts               # HTTP POST endpoint for chat messages
+├── voice-turn/
+│   └── route.ts               # HTTP POST endpoint for voice (ADR-024)
 
-src/components/
-├── scheduler/
-│   ├── ChatPanel.tsx          # Chat input/output UI
-│   ├── VoicePanel.tsx         # Voice controls + visual feedback
-│   ├── SlotPicker.tsx         # Available slot display
-│   ├── BookingConfirmation.tsx
-│   └── ModeToggle.tsx         # Chat/Voice switch
+src/ui/
+├── UnifiedCustomerAssistantClient.tsx  # Unified chat + voice UI
 ```
 
 ---
@@ -1048,13 +1079,17 @@ src/components/
 |---|---|---|
 | STT (primary) | Deepgram nova-2 (credit-limited $200 signup credits) | **$0 while credits remain** |
 | STT (fallback) | Web Speech API (browser-native) | **$0** |
-| TTS | Browser SpeechSynthesis (native) | **$0** |
-| Intent classification | Gemini 2.5 Flash-Lite (free tier) — 1 call/booking | **$0** |
+| TTS (primary) | Deepgram Aura (credit-limited $200 signup credits, ADR-004a) | **$0 while credits remain** |
+| TTS (fallback) | Browser SpeechSynthesis (native, ADR-004a) | **$0** |
+| Intent classification | Regex (deterministic, 0 calls typical) | **$0** |
+| Intent fallback | Gemini 2.5 Flash-Lite (ADR-025, only on regex miss) | **$0** |
+| Day resolution fallback | Gemini 2.5 Flash-Lite (ADR-025, only on regex miss) | **$0** |
 | Preparation guidance | Gemini 2.5 Flash (free tier) — 1 call (what_to_prepare only) | **$0** |
 | Theme read | DB query (no API) | **$0** |
 | Topic matching | Regex/keyword (local) | **$0** |
 | PII masking | Regex (local) | **$0** |
 | Slot formatting | `Intl.DateTimeFormat` (local) | **$0** |
-| **Total per booking** | **1 Flash-Lite call + optional 1 Flash call + optional Deepgram STT session** | **$0 for capstone/demo while credits remain** |
+| Voice formatting | Local text pipeline (no API) | **$0** |
+| **Total per booking** | **0-2 Flash-Lite fallback calls + optional 1 Flash call + Deepgram STT+TTS session** | **$0 for capstone/demo while credits remain** |
 
-No component in this architecture costs money for the capstone demo. Deepgram is credit-limited and falls back to Web Speech API or chat when unavailable or exhausted.
+No component in this architecture costs money for the capstone demo. Deepgram STT+TTS share the $200 credit pool and fall back to Web Speech API + Browser SpeechSynthesis when unavailable or exhausted. LLM fallback calls are feature-flagged and fire only on regex misses (typical: 0 calls).

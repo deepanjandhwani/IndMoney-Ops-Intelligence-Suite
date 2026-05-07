@@ -1,11 +1,5 @@
-import { ModulePlaceholder } from "@/ui/ModulePlaceholder";
+import { ReviewPulseClient } from "@/ui/ReviewPulseClient";
 
 export default function ReviewPulsePage() {
-  return (
-    <ModulePlaceholder
-      role="Admin"
-      title="Review Pulse"
-      description="Google Play review ingestion and weekly pulse storage will be implemented in Phase 2."
-    />
-  );
+  return <ReviewPulseClient />;
 }

@@ -1,0 +1,6 @@
+# FastMCP Google sidecar (Phase 4). Install: pip install -r mcp/requirements-fastmcp.txt
+fastmcp>=2.0.0
+google-api-python-client>=2.160.0
+google-auth-httplib2>=0.2.0
+google-auth-oauthlib>=1.2.0
+python-dotenv>=1.0.0

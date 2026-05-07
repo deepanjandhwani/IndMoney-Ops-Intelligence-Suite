@@ -1,11 +1,5 @@
-import { ModulePlaceholder } from "@/ui/ModulePlaceholder";
+import { FaqClient } from "@/ui/FaqClient";
 
 export default function CustomerFaqPage() {
-  return (
-    <ModulePlaceholder
-      role="Customer"
-      title="Smart-Sync FAQ"
-      description="Facts-only FAQ surface from approved sources will be implemented in Phase 3."
-    />
-  );
+  return <FaqClient />;
 }

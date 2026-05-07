@@ -13,3 +13,21 @@ yarn-error.log*
 pnpm-debug.log*
 
 .DS_Store
+
+# Local Chroma persistence (Python `chroma run` / CLI)
+.chroma/
+
+# OAuth client + token files (never commit)
+credentials/
+
+# Local SQLite chat history (auto-created, device-specific)
+.data/
+
+# Python bytecode caches
+__pycache__/
+
+# Chroma server log (generated at runtime)
+chroma.log
+
+# Build / CI artifacts (generated, not source)
+artifacts/

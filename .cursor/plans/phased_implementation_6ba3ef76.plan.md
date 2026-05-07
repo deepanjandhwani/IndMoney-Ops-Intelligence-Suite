@@ -1,25 +1,25 @@
 ---
 name: Phased Implementation
-overview: Implement the INDmoney Ops Intelligence Suite in spec-driven phases, resolving blocking documentation mismatches at the phase where they affect code and verifying each phase before moving on.
+overview: Implement the Groww Ops Intelligence Suite in spec-driven phases, resolving blocking documentation mismatches at the phase where they affect code and verifying each phase before moving on.
 todos:
   - id: phase-0-doc-scaffold
     content: Resolve blocking docs, env inventory, and scaffold project shell before feature code
     status: completed
   - id: phase-1-data-safety
     content: Implement schema, PII masking, booking-code generation, and centralized model config
-    status: pending
+    status: completed
   - id: phase-2-review-pulse
     content: Build Google Play ingestion, BERTopic clustering, and Review Pulse storage
-    status: pending
+    status: completed
   - id: phase-3-rag-faq
     content: Build approved-source ingestion, ChromaDB retrieval, cited FAQ answering, and safety checks
-    status: pending
+    status: completed
   - id: phase-4-fastmcp
     content: Build real FastMCP Google Calendar, Sheets, and Gmail draft integrations
-    status: pending
+    status: completed
   - id: phase-5-chat-hitl
     content: Build chat scheduler, secure-details flow, and HITL approval lifecycle
-    status: pending
+    status: completed
   - id: phase-6-voice
     content: Add Deepgram/Web Speech voice mode over the shared scheduler state machine
     status: pending
@@ -87,7 +87,7 @@ Work:
 Acceptance:
 - Duplicate reviews skipped and counted.
 - Raw PII never stored.
-- Pulse has exactly 5 themes, top 3 with 3 quotes each, 3 action ideas, summary <=250 words.
+- Pulse has exactly 5 themes, exactly 3 representative quotes overall (typically one per top-3 theme when substantive quotes exist), 3 action ideas, summary <=250 words.
 - Stale/zero-review/no-cluster edge cases preserve previous pulse.
 
 ## Phase 3: Smart-Sync FAQ RAG

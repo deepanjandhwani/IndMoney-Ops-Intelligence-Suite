@@ -3,6 +3,7 @@ export type AppRole = "customer" | "admin";
 export type AppModule =
   | "smart-sync-faq"
   | "advisor-scheduler"
+  | "my-bookings"
   | "review-pulse"
   | "review-trends"
   | "hitl-approval"
@@ -18,16 +19,23 @@ export type NavigationItem = {
 
 export const navigationItems: NavigationItem[] = [
   {
-    label: "Smart-Sync FAQ",
+    label: "Mutual Fund FAQ",
     module: "smart-sync-faq",
     href: "/customer/faq",
     roles: ["customer"],
     status: "scaffolded"
   },
   {
-    label: "Advisor Scheduler",
+    label: "Speak to an Advisor",
     module: "advisor-scheduler",
     href: "/customer/scheduler",
+    roles: ["customer"],
+    status: "scaffolded"
+  },
+  {
+    label: "My Bookings",
+    module: "my-bookings",
+    href: "/customer/my-bookings",
     roles: ["customer"],
     status: "scaffolded"
   },

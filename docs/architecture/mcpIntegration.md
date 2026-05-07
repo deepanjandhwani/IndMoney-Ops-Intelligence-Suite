@@ -36,11 +36,16 @@ Google APIs are accessed via OAuth 2.0 with a free Google Cloud project. No paid
 **Required Environment Variables:**
 
 ```env
+MCP_SERVER_URL=http://localhost:8000/sse
 GOOGLE_CREDENTIALS_PATH=./credentials/credentials.json
 GOOGLE_TOKEN_PATH=./credentials/token.json
 GOOGLE_ADVISOR_CALENDAR_ID=advisor@example.com
 GOOGLE_SHEET_ID=<spreadsheet-id>
+GOOGLE_SHEET_TAB=Bookings
 GOOGLE_ADVISOR_EMAIL=advisor@example.com
+# FastMCP bind (Python sidecar only; optional)
+# FASTMCP_HOST=127.0.0.1
+# FASTMCP_PORT=8000
 ```
 
 All variables are documented in `.env.example`.
@@ -93,7 +98,7 @@ The service layer is TypeScript (Next.js API routes). It calls the Python FastMC
 ```python
 from fastmcp import FastMCP
 
-mcp = FastMCP("indmoney-ops-mcp")
+mcp = FastMCP("groww-ops-mcp")
 
 # --- Calendar Tools ---
 @mcp.tool()
@@ -102,8 +107,9 @@ def read_calendar_availability(
     window_start: str,
     window_end: str,
     timezone: str,
+    slot_duration_minutes: int = 30,
 ) -> dict:
-    """Read free/busy availability before offering slots."""
+    """Read FreeBusy plus suggested contiguous free slots (slot_duration_minutes)."""
     ...
 
 @mcp.tool()
@@ -122,12 +128,14 @@ def create_calendar_hold(
 @mcp.tool()
 def update_calendar_event(
     event_id: str,
+    advisor_calendar: str | None = None,
     title: str | None = None,
     start_time: str | None = None,
     end_time: str | None = None,
+    end_timezone: str | None = None,
     description: str | None = None,
 ) -> dict:
-    """Update an existing calendar event (reschedule or add details)."""
+    """Update/reschedule event. See Section 2.3.1 for end_timezone semantics."""
     ...
 
 @mcp.tool()
@@ -135,13 +143,17 @@ def add_customer_attendee(
     event_id: str,
     customer_email: str,
     customer_name: str | None = None,
+    advisor_calendar: str | None = None,
 ) -> dict:
     """Add customer attendee only after secure details submission and Admin approval."""
     ...
 
 @mcp.tool()
-def cancel_calendar_event(event_id: str) -> dict:
-    """Cancel (delete) a calendar event."""
+def cancel_calendar_event(
+    event_id: str,
+    advisor_calendar: str | None = None,
+) -> dict:
+    """Cancel (delete). advisor_calendar omitted → GOOGLE_ADVISOR_CALENDAR_ID."""
     ...
 
 # --- Sheet Tools ---
@@ -262,6 +274,20 @@ def create_calendar_hold(
     }
 ```
 
+### 2.3.1 `update_calendar_event` — optional `end_timezone`
+
+The shipped FastMCP implementation (`mcp/groww_ops_mcp_server.py`) exposes:
+
+| Parameter | Required | Purpose |
+|-----------|----------|---------|
+| `event_id` | Yes | Calendar API event id returned from `create_calendar_hold`. |
+| `advisor_calendar` | No | Calendar to update. If omitted, defaults to `GOOGLE_ADVISOR_CALENDAR_ID`. |
+| `start_time` / `end_time` | No | New `dateTime` values when rescheduling (either or both). |
+| `end_timezone` | No | IANA timezone id applied to **both** `start` and `end` when **either** time is patched (default product choice: `Asia/Kolkata`). If omitted, the server uses the existing event end `timeZone`, or falls back to `Asia/Kolkata`. |
+| `title` / `description` | No | Patch summary or description without moving the slot. |
+
+**Naming:** Google’s event resource carries `timeZone` on both `start` and `end`. The tool uses one resolved zone for both fields when updating times so IST holds stay consistent. The MCP argument is snake_case **`end_timezone`**; the TypeScript adapter uses **`endTimezone`**.
+
 ### 2.4 Approval-Gated Attendee Update
 
 ```python
@@ -270,21 +296,23 @@ def add_customer_attendee(
     event_id: str,
     customer_email: str,
     customer_name: str | None = None,
+    advisor_calendar: str | None = None,
 ) -> dict:
     """
     Add customer attendee only after secure details submission
-    and Admin approval.
+    and Admin approval. advisor_calendar omitted → GOOGLE_ADVISOR_CALENDAR_ID.
     """
     service = get_calendar_service()
+    cal_id = advisor_calendar or config.GOOGLE_ADVISOR_CALENDAR_ID
     event = service.events().get(
-        calendarId=config.GOOGLE_ADVISOR_CALENDAR_ID,
+        calendarId=cal_id,
         eventId=event_id,
     ).execute()
     attendees = event.get("attendees", [])
     attendees.append({"email": customer_email, "displayName": customer_name or ""})
     event["attendees"] = attendees
     updated = service.events().update(
-        calendarId=config.GOOGLE_ADVISOR_CALENDAR_ID,
+        calendarId=cal_id,
         eventId=event_id,
         body=event,
         sendUpdates="all",
@@ -318,7 +346,7 @@ Maintain an operational tracking sheet that mirrors every booking's customer-fac
 ```json
 {
   "date": "2026-04-25",
-  "product": "INDmoney",
+  "product": "Groww",
   "topic": "Account Changes / Nominee",
   "slot": "Monday, 29 April 2026, 4:00 PM IST",
   "booking_code": "NL-A742",
@@ -339,7 +367,7 @@ Maintain an operational tracking sheet that mirrors every booking's customer-fac
 | Column | Source | Notes |
 |---|---|---|
 | `date` | `bookings.created_at` (date part) | Booking creation date |
-| `product` | Hardcoded `"INDmoney"` | |
+| `product` | Hardcoded `"Groww"` | |
 | `topic` | `bookings.topic` | |
 | `slot` | Formatted from `bookings.slot_start` | Human-readable IST format |
 | `booking_code` | `bookings.booking_code` | Primary cross-reference key |
@@ -366,7 +394,7 @@ def append_sheet_row(
     service = get_sheets_service()
     values = [
         row_data.get("date", ""),
-        row_data.get("product", "INDmoney"),
+        row_data.get("product", "Groww"),
         row_data.get("topic", ""),
         row_data.get("slot", ""),
         row_data.get("booking_code", ""),
@@ -488,7 +516,7 @@ Subject: Advisor Pre-Booking — {topic} — {booking_code}
 
 A tentative advisor booking has been created.
 
-Product: INDmoney
+Product: Groww
 Booking Code: {booking_code}
 Topic: {topic}
 Slot: {slot_formatted}
@@ -1079,7 +1107,7 @@ The FastMCP Python server exposes an SSE (Server-Sent Events) endpoint. The Next
 # mcp_server.py
 from fastmcp import FastMCP
 
-mcp = FastMCP("indmoney-ops-mcp")
+mcp = FastMCP("groww-ops-mcp")
 
 # ... tool registrations (Section 1.4) ...
 
@@ -1098,7 +1126,7 @@ const MCP_SERVER_URL = process.env.MCP_SERVER_URL || "http://localhost:8000/sse"
 
 export async function getMCPClient(): Promise<Client> {
   const transport = new SSEClientTransport(new URL(MCP_SERVER_URL));
-  const client = new Client({ name: "indmoney-app", version: "1.0.0" });
+  const client = new Client({ name: "groww-app", version: "1.0.0" });
   await client.connect(transport);
   return client;
 }
@@ -1126,7 +1154,7 @@ export async function createCalendarHold(params: CalendarHoldParams) {
 MCP-specific variables in `.env.example`:
 
 ```env
-# MCP Server
+# MCP Server (Next.js → Python sidecar)
 MCP_SERVER_URL=http://localhost:8000/sse
 
 # Google OAuth / Workspace
@@ -1134,7 +1162,12 @@ GOOGLE_CREDENTIALS_PATH=./credentials/credentials.json
 GOOGLE_TOKEN_PATH=./credentials/token.json
 GOOGLE_ADVISOR_CALENDAR_ID=advisor@example.com
 GOOGLE_SHEET_ID=<spreadsheet-id>
+GOOGLE_SHEET_TAB=Bookings
 GOOGLE_ADVISOR_EMAIL=advisor@example.com
+
+# Optional: Python FastMCP bind
+# FASTMCP_HOST=127.0.0.1
+# FASTMCP_PORT=8000
 ```
 
 The root `.env.example` is the complete inventory for Supabase, Gemini, Deepgram, ChromaDB, FastMCP, Google OAuth, and GitHub Actions secret names. Keep this section limited to MCP/Google variables used by the FastMCP sidecar.
@@ -1142,8 +1175,10 @@ The root `.env.example` is the complete inventory for Supabase, Gemini, Deepgram
 ### 10.4 Development Workflow
 
 During local development:
-1. Start the FastMCP Python server: `python mcp_server.py` (runs on port 8000)
-2. Start the Next.js app: `npm run dev` (API routes call MCP server via SSE)
+
+1. Configure Google OAuth env vars and generate `token.json` (see `mcp/README.md` step-by-step).
+2. Start the FastMCP Python server: `npm run phase4:mcp` or `PYTHONPATH=mcp python3 mcp/groww_ops_mcp_server.py` (default SSE: port 8000).
+3. Start the Next.js app: `npm run dev` (API routes and services use `MCP_SERVER_URL` to reach the sidecar).
 
 For Vercel deployment:
 - For the free-tier capstone demo, the MCP server runs as a local/sidecar process and `MCP_SERVER_URL` points to that sidecar.
@@ -1191,6 +1226,9 @@ flowchart TD
 ## Appendix B: Environment Variables Summary
 
 ```env
+# MCP (Next.js)
+MCP_SERVER_URL=http://localhost:8000/sse
+
 # Google OAuth
 GOOGLE_CREDENTIALS_PATH=./credentials/credentials.json
 GOOGLE_TOKEN_PATH=./credentials/token.json
@@ -1198,8 +1236,9 @@ GOOGLE_TOKEN_PATH=./credentials/token.json
 # Google Calendar
 GOOGLE_ADVISOR_CALENDAR_ID=advisor@example.com
 
-# Google Sheets
+# Google Sheet
 GOOGLE_SHEET_ID=<spreadsheet-id>
+GOOGLE_SHEET_TAB=Bookings
 
 # Gmail
 GOOGLE_ADVISOR_EMAIL=advisor@example.com

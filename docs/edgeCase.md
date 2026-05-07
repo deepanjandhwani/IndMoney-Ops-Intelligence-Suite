@@ -22,8 +22,8 @@
   not add customer attendee or send calendar invite until details are submitted
 
 ## RAG Edge Cases
-- Question matches no chunk in vector store → return refusal, 
-  do not hallucinate answer
+- Question matches no chunk in vector store → return `no_results` with the
+  NO_RESULTS_MESSAGE (distinct from SAFETY_REFUSAL), do not hallucinate answer
 - Question partially matches fee explainer and scheme fact → 
   retrieve both, cite both sources separately
 - User tries to inject PAN or account number in FAQ question → 
@@ -69,19 +69,40 @@
 - User goes silent mid-flow → timeout with prompt to continue 
   or restart
 - Booking code spoken unclearly → confirm by reading back 
-  character by character
-- Deepgram WebSocket disconnects mid-session → reconnect WebSocket 
-  (max 3 retries), then fall back to Web Speech API. Show banner: 
-  "Voice quality may vary."
-- Deepgram credits exhausted → fall back to Web Speech API if supported, 
-  otherwise redirect to chat. Surface clear Admin warning that Deepgram 
-  is credit-limited.
+  character by character (voice-format.ts spells codes as 
+  "N L dash A 7 4 2")
+- Retry cap exceeded (MAX_STATE_RETRIES=3) → transition to 
+  closing state with message "I'm having trouble understanding. 
+  You can try again later or use the chat to type your request." 
+  Prevents infinite loops in intent, topic, slot selection states.
+- User says "cancel" at confirmation → routes to intent pivot 
+  (cancellation flow) instead of re-offering slots. "no/nope/different" 
+  still re-offers slots.
+- Same weekday name as today (e.g. "Friday" on a Friday) → resolves 
+  to next week (delta=7) instead of today (delta=0). Users requesting 
+  a named weekday always mean the future occurrence.
+- STT phonetic variations (e.g. "kay why see" for KYC, "s i p" for 
+  SIP, "no mini" for nominee) → regex patterns handle spaced letters, 
+  dotted forms, and common phonetic transcriptions.
+- Deepgram STT API unreachable (batch HTTP, ADR-024) → return 
+  stt_unavailable error to client, fall back to Web Speech API. 
+  Show banner: "Using browser voice — quality may vary."
+- Deepgram TTS fails → return response without audio_base64, 
+  client falls back to Browser SpeechSynthesis for that turn. 
+  Non-blocking — text response always available.
+- Deepgram credits exhausted → fall back to Web Speech API (STT) + 
+  Browser SpeechSynthesis (TTS) if supported, otherwise redirect to 
+  chat. Surface clear Admin warning that Deepgram is credit-limited.
+- Voice-turn endpoint times out (>30s maxDuration) → client shows 
+  retry prompt, then suggests chat if retry also fails.
 - Microphone permission denied → display message: "Please allow 
   microphone access or use chat instead." Do not retry permission 
   request. Offer chat fallback.
 - Browser unsupported for voice (no SpeechRecognition + Deepgram 
   unavailable) → redirect to chat interface with message: 
   "Voice is not supported in this browser."
+- LLM fallback timeout (ADR-025) → 5s timeout exceeded, treated 
+  as null result, ask user to rephrase. No LLM retry.
 
 ## LLM Call Edge Cases
 - LLM API rate limit hit → queue and retry with exponential backoff, 

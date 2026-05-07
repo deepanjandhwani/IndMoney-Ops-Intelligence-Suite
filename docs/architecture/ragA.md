@@ -11,7 +11,7 @@
 
 | Model | Type | Dims | MTEB Retrieval (NDCG@10) | Free Tier Limits | Latency | GPU Required |
 |---|---|---|---|---|---|---|
-| **Gemini text-embedding-004** | API | 768 | ~66.0 | 1,500 RPM, 10M TPM | ~80–150 ms/req | No |
+| **Gemini gemini-embedding-001** | API | 768 output | Current Gemini embedding model | Free tier via Gemini API / AI Studio | ~80–150 ms/req | No |
 | Cohere embed-v3.0 | API | 1024 | ~65.4 | 1,000 calls/month | ~100–200 ms/req | No |
 | Voyage AI voyage-3-lite | API | 512 | ~67.0 | 50M tokens/month | ~100–180 ms/req | No |
 | all-MiniLM-L6-v2 | Local | 384 | ~51.8 | Unlimited (local) | ~5–15 ms/chunk (CPU) | No |
@@ -34,9 +34,9 @@
 
 ### 1.3 Analysis
 
-**Gemini text-embedding-004** — Best fit.
-- Highest retrieval quality among free options (NDCG@10 ~66.0)
-- 1,500 RPM is absurdly generous for a ~400-chunk corpus. Entire ingestion completes in a single batch.
+**Gemini gemini-embedding-001** — Best fit.
+- Current Gemini embedding model available to this project API key.
+- 768-dimensional output keeps ChromaDB storage small for a ~400-chunk corpus.
 - 10M tokens/minute free tier means query-time embedding is effectively unlimited for this scale.
 - Multilingual support handles Hindi-mixed queries natively.
 - 768 dimensions: good balance between quality and storage.
@@ -63,7 +63,7 @@
 
 ### 1.4 Decision
 
-**Selected: Gemini text-embedding-004**
+**Selected: Gemini gemini-embedding-001**
 
 | Property | Value |
 |---|---|
@@ -209,7 +209,7 @@ type ContentType = "scheme_fact" | "fee_explanation" | "regulatory_education" | 
 | Property | Value |
 |---|---|
 | Collection name | `smart_sync_kb` |
-| Embedding function | Gemini text-embedding-004 (via custom ChromaDB embedding function) |
+| Embedding function | Gemini gemini-embedding-001 (via custom ChromaDB embedding function) |
 | Distance metric | Cosine similarity (`cosine`) |
 | Total documents | ~200–400 chunks |
 
@@ -262,7 +262,7 @@ This ensures scheme facts never compete with help page text for the same similar
 ```typescript
 interface ChromaDBConfig {
   collectionName: "smart_sync_kb";
-  embeddingModel: "text-embedding-004";
+  embeddingModel: "gemini-embedding-001";
   embeddingDimensions: 768;
   distanceMetric: "cosine";
 }
@@ -299,20 +299,38 @@ Hybrid retrieval uses cosine for semantic relevance + BM25 for term precision.
 ### 4.2 Retrieval Pipeline Steps
 
 ```
-Step 1: Query Classification (cheapest LLM)
+Step 0: Pronoun Resolution / Query Rewrite (if pronouns detected + history exists)
+    ↓
+Step 1: Query Classification (cheapest LLM) + Fund Filter Application
     ↓
 Step 2: Metadata-Filtered Vector Search (ChromaDB)
     ↓
 Step 3: BM25 Keyword Rerank on top-k
     ↓
-Step 4: Context Assembly with Citations
+Step 4: Context Assembly with Citations + Conversation History Injection
 ```
+
+#### Step 0: Pronoun Resolution / Query Rewrite (See ADR-020)
+
+**Model:** Gemini 2.5 Flash-Lite (same model as classification)
+
+**Purpose:** When a follow-up question uses pronouns ("this fund", "its NAV", "that one", "the fund"), the embedding would be vague and match poorly. This step rewrites the query to be self-contained using the last 4 conversation turns.
+
+**Trigger:** Only fires when both conditions are met: (1) conversation history is non-empty, and (2) the PII-masked query matches the pronoun pattern (`/\b(this|that|its|it|the fund|above|previous|same|those|these)\b/i`). When not triggered, the original query passes through unchanged.
+
+**Fallback:** If the LLM returns garbage or a very short rewrite (<5 chars), the original query is used.
+
+> **Cost flag: FREE.** Gemini 2.5 Flash-Lite free tier. ~100 tokens per rewrite call. Only called for pronoun-bearing queries.
+
+#### Step 0b: Fund Filter Application (See ADR-021)
+
+When the user has selected funds via the filter bar (Fund Type / Risk Profile / Fund Name chips), the classification result is overridden to scope `extracted_scheme_name` to the selected fund names. This ensures ChromaDB retrieval is limited to the relevant funds even for broad or comparative questions.
 
 #### Step 1: Query Classification
 
 **Model:** Cheapest LLM — Gemini 2.5 Flash-Lite (free: 15 RPM, 1,000 RPD) or Groq Llama 3 (free: 30 RPM)
 
-**Purpose:** Classify the query into a retrieval category to select the correct metadata filter.
+**Purpose:** Classify the (possibly rewritten) query into a retrieval category to select the correct metadata filter.
 
 ```typescript
 type QueryCategory =
@@ -615,7 +633,8 @@ FUNCTION agenticRAG(user_query: string): FAQAnswer
       all_chunks = merge(all_chunks, secondary_results.chunks)
 
   // ── Step 5: Sufficiency gate ────────────────────────────
-  IF all_chunks.length == 0 OR maxRelevanceScore(all_chunks) < 0.3:
+  // Spec defers to §5.4 — top score must be ≥ 0.4 AND at least one chunk ≥ 0.5.
+  IF all_chunks.length == 0 OR isSufficient(all_chunks, user_query) == false:
     RETURN noResultsResponse()
     //   "I don't have enough information from approved sources
     //    to answer this question. You can try rephrasing, or
@@ -856,7 +875,8 @@ const SAFETY_REFUSAL =
   "I can't provide investment advice, return predictions, or handle " +
   "personal account information. I can help with facts from approved " +
   "sources, such as exit load, expense ratio, lock-in, benchmark, " +
-  "riskometer, fee explanation, or statement download steps.";
+  "riskometer, fee explanation, or statement download steps. " +
+  "For investor education, see https://investor.sebi.gov.in/.";
 ```
 
 ---
@@ -874,24 +894,30 @@ Content Parser (extract text, detect sections)
     ↓
 Chunker (content-aware splitting per Section 2)
     ↓
-Embedder (Gemini text-embedding-004)
+Embedder (Gemini gemini-embedding-001)
     ↓
 ChromaDB Upsert (smart_sync_kb collection)
     ↓
 Stale Chunk Detection + Cleanup
 ```
 
+The automated refresh is `.github/workflows/rag_refresh.yml`. It runs daily at 10:00 AM IST (`30 4 * * *` UTC) and can also be triggered manually with `workflow_dispatch`. The workflow executes `npm run phase3:ingest`, so `GH_CHROMA_URL` must point to the same reachable ChromaDB sidecar used by the app and `GH_GEMINI_API_KEY` must be configured in GitHub repository secrets.
+
 ### 8.2 File Structure
 
 ```
 src/rag/
 ├── ingest.ts        # Orchestrates full ingestion pipeline
-├── chunk.ts         # Content-aware chunking logic
-├── embed.ts         # Gemini embedding adapter
-├── retrieve.ts      # Hybrid retrieval (vector + BM25 rerank)
-├── agenticRAG.ts    # Agent loop with tool dispatch
-├── safety.ts        # Post-retrieval safety check
-├── citations.ts     # Citation assembly
+├── chunk.ts         # Content-aware chunking logic (token-aware caps)
+├── gemini.ts        # Gemini embedding + classify/generate/safety adapter
+├── retrieve.ts      # Hybrid retrieval (vector + BM25 rerank, cross-domain second hop)
+├── faq.ts           # End-to-end FAQ orchestration (classify → retrieve → generate → safety)
+├── classify.ts      # Query classification + metadata filter builder
+├── safety.ts        # Pre/post-generation safety guardrails
+├── answer.ts        # Cited-answer generation + post-gen safety call
+├── citations.ts     # Citation assembly + required-citation enforcement
+├── manifest.ts      # Source manifest + frontmatter loader
+├── chroma.ts        # ChromaDB vector store wrapper
 └── types.ts         # Shared TypeScript interfaces
 ```
 
@@ -902,7 +928,7 @@ src/rag/
 
 interface IngestionConfig {
   sourceManifestPath: string;  // config/source_urls.json
-  feeExplainerPath: string;   // data/static_fee_explainer.md
+  feeExplainerPath: string;   // config/static_fee_explainer.md
   chromaCollection: string;    // "smart_sync_kb"
   forceReIngest: boolean;      // re-scrape even if content unchanged
 }
@@ -923,7 +949,7 @@ async function runIngestion(config: IngestionConfig): Promise<IngestionResult> {
   // 2. For each URL: scrape with Playwright
   // 3. Parse HTML → extract text sections
   // 4. Chunk with content-aware strategy (Section 2)
-  // 5. Embed chunks via Gemini text-embedding-004
+  // 5. Embed chunks via Gemini gemini-embedding-001
   // 6. Upsert into ChromaDB with metadata
   // 7. Detect and remove stale chunks
   // 8. Return ingestion report
@@ -1023,7 +1049,7 @@ Per `edgeCase.md`: "Source URL returns 404 during ingestion → log as failed, f
 
 | Component | Service | Cost |
 |---|---|---|
-| Embedding model | Gemini text-embedding-004 (free tier) | **$0** |
+| Embedding model | Gemini gemini-embedding-001 (free tier) | **$0** |
 | Vector store | ChromaDB (local) | **$0** |
 | Query classification | Gemini 2.5 Flash-Lite (free tier) | **$0** |
 | Answer generation | Gemini 2.5 Flash (free tier) | **$0** |
@@ -1041,7 +1067,7 @@ No component in this architecture costs money. All services use free tiers or ru
 | Task | Model | Tier | Free Limit | Notes |
 |---|---|---|---|---|
 | Query classification | Gemini 2.5 Flash-Lite | Cheapest | 15 RPM, 1,000 RPD | ~50 tokens/call |
-| Query embedding | Gemini text-embedding-004 | N/A (embedding) | 1,500 RPM, 10M TPM | ~20 tokens/call |
+| Query embedding | Gemini gemini-embedding-001 | N/A (embedding) | Free tier via Gemini API / AI Studio | ~20 tokens/call |
 | Answer generation | Gemini 2.5 Flash | Best free | 10 RPM, 500 RPD | ~500 tokens/call |
 | Safety check | Gemini 2.5 Flash-Lite | Cheapest | 15 RPM, 1,000 RPD | ~100 tokens/call |
 

@@ -1,14 +1,27 @@
 {
-  "name": "indmoney-ops-intelligence-suite",
+  "name": "groww-ops-intelligence-suite",
   "version": "1.0.0",
   "private": true,
-  "description": "INDmoney Ops Intelligence Suite capstone scaffold",
+  "description": "Groww Ops Intelligence Suite capstone scaffold",
   "scripts": {
-    "dev": "next dev",
+    "dev": "WATCHPACK_POLLING=true next dev",
+    "dev:no-poll": "next dev",
+    "dev:poll": "WATCHPACK_POLLING=true next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "phase2:ingest": "tsx src/cli/ingest-google-play-reviews.ts",
+    "phase2:cluster": "python3 scripts/cluster_reviews.py",
+    "phase2:review-pulse": "npm run phase2:ingest && npm run phase2:cluster",
+    "phase3:ingest": "tsx src/cli/ingest-smart-sync-kb.ts",
+    "chroma:local": "chroma run --path .chroma/local-data --host 127.0.0.1 --port 8001",
+    "evals:phase3": "tsx scripts/run-phase3-evals.ts",
+    "phase4:mcp": "PYTHONPATH=mcp python3 mcp/groww_ops_mcp_server.py",
+    "phase4:oauth-login": "PYTHONPATH=mcp python3 mcp/groww_ops_mcp_server.py --oauth-login",
+    "phase4:oauth-login-force": "PYTHONPATH=mcp python3 mcp/groww_ops_mcp_server.py --oauth-login --force",
+    "phase4:verify-tools": "PYTHONPATH=mcp python3 mcp/verify_tool_surface.py"
   },
   "repository": {
     "type": "git",
@@ -23,16 +36,36 @@
   },
   "homepage": "https://github.com/deepanjandhwani/IndMoney-Ops-Intelligence-Suite#readme",
   "dependencies": {
+    "@chroma-core/default-embed": "^0.1.9",
+    "@google/generative-ai": "^0.24.1",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@supabase/ssr": "^0.10.2",
+    "@supabase/supabase-js": "^2.105.1",
+    "@tailwindcss/postcss": "^4.2.4",
+    "@types/better-sqlite3": "^7.6.13",
+    "better-sqlite3": "^12.9.0",
+    "chromadb": "^3.4.3",
+    "framer-motion": "^12.38.0",
+    "google-play-scraper": "^10.1.2",
+    "groq-sdk": "^1.1.2",
+    "lucide-react": "^1.14.0",
     "next": "^14.2.35",
+    "playwright": "^1.59.1",
+    "postcss": "^8.5.13",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "recharts": "^3.8.1",
+    "tailwindcss": "^4.2.4"
   },
   "devDependencies": {
     "@types/node": "^20.19.39",
     "@types/react": "^18.3.28",
     "@types/react-dom": "^18.3.7",
+    "dotenv": "^17.4.2",
     "eslint": "^8.57.1",
     "eslint-config-next": "^14.2.35",
-    "typescript": "^5.9.3"
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.5"
   }
 }

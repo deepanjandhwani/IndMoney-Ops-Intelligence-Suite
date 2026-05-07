@@ -2,7 +2,7 @@
 
 ## 1. System Overview
 
-The Investor Ops & Intelligence Suite is a unified AI-powered web application for INDmoney that connects Google Play Store review intelligence, facts-only customer FAQ support, chat and voice advisor scheduling, and human-in-the-loop operations management. Customers get factual mutual fund answers from predefined official sources and book tentative advisor appointments without sharing personal information. Admin users ingest and monitor Google Play reviews weekly via GitHub Actions, view rolling 12-week review trends, manage advisor booking operations through synced Google Sheet and HITL records, and verify system reliability through structured evaluations. Services run on free-tier infrastructure, local sidecars, or explicitly flagged credit-limited free credits.
+The Investor Ops & Intelligence Suite is a unified AI-powered web application for Groww that connects Google Play Store review intelligence, facts-only customer FAQ support, chat and voice advisor scheduling, and human-in-the-loop operations management. Customers get factual mutual fund answers from predefined official sources and book tentative advisor appointments without sharing personal information. Admin users ingest and monitor Google Play reviews weekly via GitHub Actions, view rolling 12-week review trends, manage advisor booking operations through synced Google Sheet and HITL records, and verify system reliability through structured evaluations. Services run on free-tier infrastructure, local sidecars, or explicitly flagged credit-limited free credits.
 
 ### User Roles
 
@@ -28,9 +28,11 @@ flowchart TD
 
     N[Predefined Source URLs] -->|Playwright scraper| O[RAG Knowledge Base — ChromaDB]
     P[Static Fee Explainer] --> O
-    Q[Customer FAQ Question] --> O
+    Q[Customer FAQ Question + Fund Filters] --> Q1[Pronoun Resolution / Query Rewrite]
+    Q1 --> O
     O --> R[Safety + Citation Check]
     R --> S[Cited Factual Answer]
+    S --> T[Chat History — SQLite / Supabase]
 ```
 
 ---
@@ -39,8 +41,8 @@ flowchart TD
 
 ### Module A — Automated Google Play Review Intelligence
 
-- **Inputs:** Google Play Store reviews for `com.indmoney` via `google-play-scraper`
-- **Outputs:** Stored reviews (deduplicated, PII-masked), weekly Review Pulse (top themes, quotes, action ideas, summary), latest top customer themes
+- **Inputs:** Google Play Store reviews for `com.nextbillion.groww` via `google-play-scraper`
+- **Outputs:** Stored reviews (deduplicated, PII-masked), weekly Review Pulse (top themes, overall representative quotes, action ideas, summary), latest top customer themes
 - **Integrations:** GitHub Actions (scheduled weekly trigger), App DB (review + pulse storage)
 - **Access:** Admin only (ingestion health dashboard, pulse view, manual trigger button)
 
@@ -53,9 +55,14 @@ flowchart TD
 
 ### Module C — Smart-Sync Knowledge Base (FAQ)
 
-- **Inputs:** Customer question (text), ~15 predefined official URLs (scraped via Playwright), static fee explainer text
-- **Outputs:** Facts-only answer with source citations and last-checked date, max 6 bullets
-- **Integrations:** ChromaDB (vector retrieval), LLM (answer generation + safety check)
+- **Inputs:** Customer question (text), conversation history (last 4 turns for pronoun resolution), selected fund filters (fund type, risk profile, fund names), ~15 predefined official URLs (scraped via Playwright), static fee explainer text
+- **Outputs:** Facts-only answer with source citations and last-checked date, max 6 bullets, updated session context (active_fund, last_topic, recent_funds)
+- **Key features:**
+  - LLM-powered query rewriting resolves pronouns ("this fund", "its", "that") before embedding and classification (See ADR-020)
+  - Always-visible fund filter bar (Fund Type / Risk Profile / Fund Name) scopes retrieval to selected funds (See ADR-021)
+  - Conversation history injected into answer prompt for contextual coherence
+  - Chat history persisted to SQLite locally (Supabase when available) (See ADR-019)
+- **Integrations:** ChromaDB (vector retrieval), LLM (query rewrite + answer generation + safety check), GitHub Actions daily RAG refresh at 10:00 AM IST
 - **Access:** Customer (interactive FAQ), Admin (FAQ preview)
 
 ### Module D — Chat + Voice Advisor Scheduler
@@ -95,7 +102,7 @@ sequenceDiagram
     participant Scheduler as Advisor Scheduler
 
     GH->>Scraper: Trigger weekly (or manual)
-    Scraper->>Scraper: Fetch reviews for com.indmoney
+    Scraper->>Scraper: Fetch reviews for com.nextbillion.groww
     Scraper->>DB: Store new reviews (dedup, PII mask)
     Scraper->>DB: Write ingestion_run record
     GH->>Cluster: Run BERTopic pipeline (UMAP + HDBSCAN + c-TF-IDF)
@@ -129,32 +136,40 @@ sequenceDiagram
     Sched->>DB: Create HITL record (HITL status: pending; booking status: pending_admin_confirmation)
     Sched->>Cust: Return tentative booking code + secure details link
     Cust->>Web: Submit secure details via opaque-token link (outside AI conversation)
-    Web->>DB: Store secure details outside chat transcript
+    Web->>DB: Store token hash + encrypted secure details outside chat transcript
     Admin->>DB: Review booking in HITL Center
     Admin->>DB: Approve / Reject / Reschedule / Cancel
     DB->>Sheet: Sync status update
     DB->>Cal: Add customer attendee only if approved + secure details submitted
 ```
 
-### 3.3 FAQ Question → RAG → Safety Check → Cited Answer
+### 3.3 FAQ Question → Query Rewrite → RAG → Safety Check → Cited Answer
 
 ```mermaid
 sequenceDiagram
     participant Cust as Customer
+    participant UI as Filter Bar + Chat UI
     participant API as FAQ Service
     participant PII as PII Filter
+    participant Rewrite as Query Rewriter
+    participant Classify as Classifier
     participant Vec as ChromaDB
     participant LLM as LLM Service
     participant Safety as Safety Guard
+    participant History as Chat History (SQLite / Supabase)
 
-    Cust->>API: Submit question
+    Cust->>UI: Submit question + selected fund filters
+    UI->>API: POST {question, context, history, selected_funds}
     API->>PII: Mask any PII in query
-    PII->>Vec: Retrieve top-k chunks (scheme facts + fee explainer)
-    Vec->>LLM: Generate answer from retrieved chunks
+    PII->>Rewrite: Rewrite if pronouns detected (this, that, its)
+    Rewrite->>Classify: Classify rewritten query + apply fund filters
+    Classify->>Vec: Retrieve top-k chunks (scoped by selected funds)
+    Vec->>LLM: Generate answer from chunks + conversation history
     LLM->>Safety: Check no-advice guard
     Safety->>Safety: Verify citations present
     Safety-->>Cust: Refuse if advice detected
-    Safety->>Cust: Return cited factual answer (max 6 bullets)
+    Safety->>Cust: Return cited factual answer + updated context
+    API->>History: Persist event (SQLite fallback if Supabase unavailable)
 ```
 
 ---
@@ -192,6 +207,8 @@ sequenceDiagram
 
 ### 5.1 App DB — Supabase Free Tier (Postgres) (See ADR-011)
 
+All Phase 1 `public` tables have RLS enabled. Until role-specific access policies are implemented in later phases, `anon` and `authenticated` roles are explicitly denied; backend services use server-side credentials only.
+
 **`reviews`**
 
 | Column | Type | Notes |
@@ -226,13 +243,14 @@ sequenceDiagram
 | Column | Type | Notes |
 |---|---|---|
 | id | UUID / INTEGER | Primary key |
-| product | TEXT | Always `INDmoney` |
+| product | TEXT | Always `Groww` |
 | period | TEXT | e.g. `Rolling 12 weeks ending 2026-04-26` |
 | total_reviews_analyzed | INTEGER | |
 | average_rating | REAL | |
-| top_themes | JSON | Exactly 5 items: `{theme, rank, quotes[]}`. Top 3 have exactly 3 quotes each; ranks 4-5 have empty quote arrays. |
+| top_themes | JSON | Exactly 5 items: `{theme, rank}` |
+| representative_quotes | JSON | Exactly 3 overall representative customer quotes |
 | weekly_summary | TEXT | Max 250 words |
-| action_ideas | JSON | Exactly 3 items |
+| action_ideas | JSON | Exactly 3 objects: `{idea, based_on_theme, evidence}` grounded in top themes |
 | top_customer_themes | JSON | Used by Scheduler greeting |
 | source | TEXT | Always `Google Play Store Reviews` |
 | created_at | TIMESTAMP | Generation time |
@@ -249,7 +267,7 @@ sequenceDiagram
 | status | TEXT | Customer-facing booking lifecycle: `pending_admin_confirmation` / `confirmed` / `reschedule_requested` / `rescheduled` / `cancel_requested` / `cancelled` / `rejected` |
 | input_mode | TEXT | `chat` / `voice` |
 | secure_link_submitted | BOOLEAN | Default false |
-| secure_details_token | TEXT | Opaque token for secure details link, not exposed in AI conversation |
+| secure_details_token_hash | TEXT | Hash of opaque secure-details token; raw token is never stored |
 | secure_link_expires_at | TIMESTAMP | Expiry for the secure details link |
 | calendar_event_id | TEXT | From Google Calendar API |
 | sheet_row_id | TEXT | From Google Sheets API |
@@ -259,6 +277,20 @@ sequenceDiagram
 | email_draft_status | TEXT | `created` / `updated` / `failed` |
 | created_at | TIMESTAMP | |
 | updated_at | TIMESTAMP | |
+
+**`secure_details_submissions`**
+
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID / INTEGER | Primary key |
+| booking_id | FK | References bookings.id, unique |
+| booking_code | TEXT | Denormalized for display and lookup |
+| token_hash | TEXT | Hash of opaque secure-details token |
+| details_ciphertext | TEXT | Encrypted secure-details payload; raw details are never stored in AI chat/voice transcripts |
+| details_metadata | JSON | Non-sensitive metadata for audit/debugging |
+| expires_at | TIMESTAMP | Secure link expiry |
+| submitted_at | TIMESTAMP | Submission time |
+| created_at | TIMESTAMP | |
 
 **`hitl_actions`**
 
@@ -286,7 +318,7 @@ sequenceDiagram
 | id | UUID / INTEGER | Primary key |
 | review_id | FK | References reviews.id, unique |
 | embedding | JSON | 768-dim vector as JSON array |
-| model | TEXT | `"text-embedding-004"` |
+| model | TEXT | `"gemini-embedding-001"` |
 | created_at | TIMESTAMP | Embedding generation time |
 
 **`theme_snapshots`**
@@ -306,9 +338,41 @@ sequenceDiagram
 | week_end | DATE | End of the week covered |
 | created_at | TIMESTAMP | Snapshot creation time |
 
+### 5.1.1 Chat History — SQLite Fallback (See ADR-019)
+
+When Supabase credentials are not configured, chat history is persisted to a local SQLite database at `.data/chat-history.sqlite` using `better-sqlite3`. The schema mirrors the Supabase `assistant_sessions` and `assistant_session_events` tables. When Supabase is available, it is preferred. The fallback is transparent — API routes always return a functioning repository.
+
+**`assistant_sessions`** (SQLite or Supabase)
+
+| Column | Type | Notes |
+|---|---|---|
+| id | TEXT (UUID) | Primary key |
+| device_id_hash | TEXT | SHA-256 hash of client device UUID |
+| label | TEXT | First user message (max 120 chars), nullable |
+| lane_summary | JSON | `{"assistant": N, "rag": N, "scheduler": N}` |
+| created_at | TEXT (ISO) | Session creation time |
+| last_activity_at | TEXT (ISO) | Last event time |
+
+**`assistant_session_events`** (SQLite or Supabase)
+
+| Column | Type | Notes |
+|---|---|---|
+| id | TEXT (UUID) | Primary key |
+| session_id | TEXT (UUID) | FK → assistant_sessions.id (CASCADE) |
+| seq | INTEGER | Sequence number within session |
+| role | TEXT | `user` / `assistant` |
+| lane | TEXT | `assistant` / `rag` / `scheduler` |
+| kind | TEXT | Event type (e.g., `faq_question`, `faq_answer`) |
+| content | TEXT | PII-masked message text |
+| pii_masked | BOOLEAN | Whether PII was detected and masked |
+| pii_findings | JSON | Array of PII findings |
+| citations | JSON | Nullable |
+| status | TEXT | Nullable |
+| created_at | TEXT (ISO) | Event time |
+
 ### 5.2 Vector DB — ChromaDB (See ADR-001, ADR-012)
 
-ChromaDB runs locally as the selected free vector DB for the capstone demo. For a hosted deployment, it must run as an explicitly configured free sidecar service or be migrated through a new ADR.
+ChromaDB runs locally as the selected free vector DB for the capstone demo. For a hosted deployment, it must run as an explicitly configured free sidecar service or be migrated through a new ADR. The daily Smart-Sync RAG refresh workflow runs at 10:00 AM IST (`30 4 * * *` UTC) and must use `GH_CHROMA_URL` pointing to the same reachable ChromaDB instance that serves customer FAQ queries.
 
 **Collection: `smart_sync_kb`**
 
@@ -325,6 +389,8 @@ Metadata per document:
   "url": "https://official-source-url.com",
   "last_checked": "2026-04-26",
   "scheme_name": "Axis ELSS Fund",
+  "fund_type": "sectoral",
+  "risk_category": "Very High Risk",
   "section_type": "exit_load",
   "fee_type": null,
   "scenario": null,
@@ -333,6 +399,8 @@ Metadata per document:
   "chunk_index": 0
 }
 ```
+
+The `fund_type` and `risk_category` fields (See ADR-021) are sourced from `config/source_urls.json` and enriched during the scraping step. The `/api/smart-sync-faq/funds` endpoint serves this catalog to the frontend filter bar.
 
 The `content_type` field partitions the collection:
 
@@ -343,7 +411,7 @@ The `content_type` field partitions the collection:
 
 Retrieval filters by `content_type` (and optional fields like `scheme_name`, `fee_type`, `topic`) using ChromaDB `where` clauses. Multi-hop queries use `$or` filters across content types in a single pass. See `docs/architecture/ragA.md` Section 3 for full collection design and query patterns.
 
-Embedding model: Gemini text-embedding-004 (See ADR-002, resolved in docs/architecture/ragA.md). 768 dimensions, free tier (1,500 RPM, 10M TPM), no GPU required.
+Embedding model: Gemini gemini-embedding-001 (See ADR-002, resolved in docs/architecture/ragA.md). 768 output dimensions, free tier via Gemini API / AI Studio, no GPU required.
 
 Distance metric: Cosine similarity.
 
@@ -402,7 +470,7 @@ Admin-only modules (A, B, E, F) must never be accessible or visible to Customer 
 
 Standard refusal message (from `rules.md`):
 
-> "I can't provide investment advice, return predictions, or handle personal account information. I can help with facts from approved sources, such as exit load, expense ratio, lock-in, benchmark, riskometer, fee explanation, or statement download steps."
+> "I can't provide investment advice, return predictions, or handle personal account information. I can help with facts from approved sources, such as exit load, expense ratio, lock-in, benchmark, riskometer, fee explanation, or statement download steps. For investor education, see https://investor.sebi.gov.in/."
 
 ### Citation Check
 
@@ -423,7 +491,8 @@ No runtime web search is permitted. All answers come from predefined sources onl
 | Intent classification | Gemini 2.5 Flash-Lite | 15 RPM, 1,000 RPD | ~80 tokens/call |
 | Safety check | Gemini 2.5 Flash-Lite | 15 RPM, 1,000 RPD | ~100 tokens/call |
 | Query classification (RAG) | Gemini 2.5 Flash-Lite | 15 RPM, 1,000 RPD | ~50 tokens/call |
-| RAG answer generation | Gemini 2.5 Flash | 10 RPM, 500 RPD | ~500 tokens/call |
+| Query rewriting (pronoun resolution) | Gemini 2.5 Flash-Lite | 15 RPM, 1,000 RPD | ~100 tokens/call; only triggered when pronouns detected in query with conversation history (See ADR-020) |
+| RAG answer generation | Gemini 2.5 Flash | 10 RPM, 500 RPD | ~500 tokens/call; includes last 3 conversation turns for contextual coherence |
 | Review Pulse (label refinement) | Gemini 2.5 Flash | 10 RPM, 500 RPD | 1 call/week, ~200 tokens |
 | Review Pulse (action ideas) | Gemini 2.5 Flash | 10 RPM, 500 RPD | 1 call/week, ~150 tokens |
 | Review Pulse (summary) | Gemini 2.5 Flash | 10 RPM, 500 RPD | 1 call/week, ~350 tokens |
@@ -439,6 +508,7 @@ No runtime web search is permitted. All answers come from predefined sources onl
 | Top customer themes | Cached in DB | Weekly (derived from pulse) |
 | Review Trends | Cached in DB | Weekly (after pulse generation) |
 | FAQ answers | Computed per request | Every customer query |
+| Query rewrite | Computed per request | Only when pronouns detected + history exists |
 | Intent classification | Computed per request | Every scheduler message |
 | Safety checks | Computed per request | Every FAQ answer + scheduler message |
 | Advisor email draft | Templated once per booking | Booking creation / reschedule |
@@ -499,11 +569,16 @@ If cached Review Pulse is stale (>7 days), trigger regeneration before serving (
 - **Integrations:** FastMCP adapters from Phase 4, App DB, Gemini intent/safety/preparation guidance
 - **Complexity:** High
 
-### Phase 6 — Voice Scheduler (Module D)
+### Phase 6 — Voice Scheduler + Scheduler Hardening (Module D)
 
 - **Modules:** Module D
-- **Deliverables:** Deepgram STT streaming, Browser SpeechSynthesis TTS, Web Speech API/chat fallback, voice PII masking, booking-code spelling, and mode switching over the shared scheduler state machine.
-- **Integrations:** Deepgram (credit-limited), Web Speech API fallback, App DB
+- **Deliverables:**
+  - **Deterministic fixes:** STT phonetic patterns in topic matching, retry cap (MAX_STATE_RETRIES=3), cancel disambiguation in confirmation state, weekday edge case fix.
+  - **LLM fallback (ADR-025):** Gemini 2.5 Flash-Lite structured output fallback for intent classification and day resolution behind existing regex parsers. Feature-flagged via `SCHEDULER_LLM_FALLBACK=true`. Typical: 0 calls. Worst case: 2 calls.
+  - **Voice pipeline (ADR-024):** Deepgram STT (nova-2) + Deepgram Aura TTS (ADR-004a) via HTTP batch endpoint (`/api/scheduler/voice-turn`). Hold-to-talk UX with MediaRecorder. Voice format pipeline (formatForVoice, buildTtsText) for booking code spelling, URL replacement, markdown stripping.
+  - **Fallback:** Web Speech API (STT) + Browser SpeechSynthesis (TTS) when Deepgram is unavailable or credits exhausted.
+  - **Voice PII masking**, booking-code spelling, and mode switching over the shared scheduler state machine.
+- **Integrations:** Deepgram (credit-limited), Web Speech API fallback, Gemini free tier (fallback only), App DB
 - **Complexity:** High
 
 ### Phase 7 — Admin Dashboards and Review Trends (Modules A, B, C, D, E, F)

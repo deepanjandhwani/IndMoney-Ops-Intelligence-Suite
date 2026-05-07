@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Capstone Project Rules
 
-You are working on the Investor Ops & Intelligence Suite for INDmoney.
+You are working on the Investor Ops & Intelligence Suite for Groww.
 
 ## Context files (read before any implementation task)
 - docs/rules.md — hard constraints
@@ -26,6 +26,9 @@ You are working on the Investor Ops & Intelligence Suite for INDmoney.
   full name, or address inside AI chat/voice.
 - Investment advice, return prediction, fund recommendation, 
   buy/sell/hold advice, and portfolio advice are prohibited.
+  The exact refusal string lives in `docs/rules.md` Advice Rules and is 
+  the source of truth for `SAFETY_REFUSAL` in `src/rag/safety.ts`. Any 
+  change to that string must update both files in the same PR.
 - Smart-Sync FAQ must answer only from predefined official source 
   URLs and approved static fee explanation text.
 - Every factual FAQ answer must include citation metadata.

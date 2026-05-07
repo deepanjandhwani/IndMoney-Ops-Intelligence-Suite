@@ -1,7 +1,7 @@
 # Theme Classification Architecture — Google Play Review Intelligence (Module A)
 
 > Resolves: ADR-003 (Theme clustering approach)
-> Depends on: ADR-002 (Embedding model — Gemini text-embedding-004), ADR-009 (LLM model-per-task), ADR-010 (LLM call caching)
+> Depends on: ADR-002 (Embedding model — Gemini gemini-embedding-001), ADR-009 (LLM model-per-task), ADR-010 (LLM call caching)
 > Model note: Per ADR-009, the project uses Gemini 2.5 Flash for generation and Flash-Lite for classification/safety. Gemini 2.0 Flash is retired.
 > Cost target: **$0** — every component must be free tier or fully local.
 
@@ -58,7 +58,7 @@ All candidates must satisfy: **free, runs locally, no GPU required.**
 2. **HDBSCAN** discovers clusters with automatic k and noise handling.
 3. **c-TF-IDF** (class-based TF-IDF) computes the most representative terms per cluster, producing human-readable keyword labels without any LLM call.
 
-The project uses pre-computed Gemini text-embedding-004 embeddings (768-dim), so BERTopic's internal embedding step is skipped entirely — no sentence-transformers or PyTorch dependency.
+The project uses pre-computed Gemini gemini-embedding-001 embeddings (768-dim output), so the BERTopic-style pipeline skips internal embedding entirely and does not install sentence-transformers or PyTorch.
 
 **Strengths:** Auto k, noise handling, AND readable c-TF-IDF labels in a single pipeline. Labels can be optionally refined with a cheap LLM call but are already interpretable without one. Actively maintained, well-documented.
 
@@ -88,7 +88,7 @@ The project uses pre-computed Gemini text-embedding-004 embeddings (768-dim), so
 1. **Auto k eliminates elbow/silhouette complexity.** Theme count varies week to week as product issues shift. Hardcoding k or running an optimization loop every week is fragile.
 2. **Noise handling removes irrelevant reviews.** Generic reviews like "Good app" or "Nice" do not belong to any complaint theme. HDBSCAN's noise label (-1) excludes them, improving theme quality. K-Means would force these into a cluster, diluting theme coherence.
 3. **c-TF-IDF reduces LLM dependency.** BERTopic generates interpretable keyword labels (e.g., "nominee, update, stuck, process") without any LLM call. The LLM only refines these into polished names (e.g., "Nominee Updates"), reducing the label generation prompt to a simple mapping task.
-4. **No GPU, no PyTorch.** By supplying pre-computed Gemini embeddings, the pipeline avoids sentence-transformers and PyTorch. Dependencies: `bertopic`, `umap-learn`, `hdbscan`, `scikit-learn`, `numpy` — all lightweight, CPU-only.
+4. **No GPU, no PyTorch.** By supplying pre-computed Gemini embeddings and implementing the BERTopic steps directly, the pipeline avoids sentence-transformers and PyTorch. Dependencies: `umap-learn`, `hdbscan`, `scikit-learn`, `numpy`, `requests`, and `supabase` — all CPU-only.
 5. **Batch-only execution.** The clustering pipeline runs weekly in GitHub Actions (or via manual trigger), not at request time. The Python dependency is isolated to the batch job and never enters the TypeScript application runtime.
 
 **Implementation:** Python script (`scripts/cluster_reviews.py`) invoked from the GitHub Actions weekly workflow. For Admin manual triggers, the Next.js API route dispatches a GitHub Actions workflow via the GitHub API, or invokes the Python script via `child_process.exec`.
@@ -98,11 +98,12 @@ The project uses pre-computed Gemini text-embedding-004 embeddings (768-dim), so
 **Python dependencies (no GPU, no PyTorch):**
 
 ```
-bertopic>=0.16
 umap-learn>=0.5
 hdbscan>=0.8
 scikit-learn>=1.3
 numpy>=1.24
+requests>=2.31
+supabase>=2.5
 ```
 
 ---
@@ -130,7 +131,7 @@ Masked Reviews (rolling 12 weeks from DB)
     ↓
 Step 1: Verify PII masking
     ↓
-Step 2: Embed reviews (Gemini text-embedding-004, cache in DB)
+Step 2: Embed reviews (Gemini gemini-embedding-001, cache in DB)
     ↓
 Step 3: Reduce dimensions (UMAP: 768 → 5)
     ↓
@@ -144,9 +145,9 @@ Step 7: Map to taxonomy (predefined or emergent)
     ↓
 Step 8: Rank themes (by cluster size)
     ↓
-Step 9: Select top 5 themes, top 3 for quotes
+Step 9: Select top 5 themes, top 3 action themes
     ↓
-Step 10: Extract 3 quotes per top-3 theme (nearest centroid, no LLM)
+Step 10: Extract 3 overall representative quotes (nearest centroid, no LLM)
     ↓
 Step 11: Generate action ideas (cheapest LLM, 1 call)
     ↓
@@ -174,12 +175,12 @@ FUNCTION weeklyThemeClassification():
   FOR EACH review IN reviews:
     IF review has no cached embedding in review_embeddings table:
       embedding = embedWithGemini(review.review_text)
-      //   Model: Gemini text-embedding-004 (free tier)
+      //   Model: Gemini gemini-embedding-001 (free tier)
       //   Output: 768-dim vector
       DB.insert("review_embeddings", {
         review_id: review.id,
         embedding: embedding,
-        model: "text-embedding-004"
+        model: "gemini-embedding-001"
       })
 
   embeddings = loadAllEmbeddings(reviews)
@@ -254,25 +255,25 @@ FUNCTION weeklyThemeClassification():
   top5 = themes[0:5]
   top3 = themes[0:3]
 
-  // ── Step 10: Extract 3 quotes per top-3 theme ──────────────
-  //   Algorithmic: nearest to cluster centroid. No LLM call.
+  // ── Step 10: Extract 3 overall representative quotes ──────
+  //   Algorithmic: nearest to top-3 theme centroids with substance filters.
+  representative_quotes = []
   FOR EACH theme IN top3:
     centroid = mean(embeddings[theme.member_indices], axis = 0)
     distances = cosine_distance(
       embeddings[theme.member_indices], centroid
     )
-    nearest_3_indices = argsort(distances)[0:3]
-    theme.quotes = reviews[theme.member_indices[nearest_3_indices]]
-      .map(r => r.review_text)
-      .map(truncate_to_120_chars)
+    representative_quotes.add_best_substantive_candidate(
+      reviews[theme.member_indices[argsort(distances)]]
+    )
 
   // ── Step 11: Generate action ideas (1 LLM call) ────────────
   action_ideas = LLM.call({
     model: "gemini-2.5-flash",
-    prompt: ACTION_IDEAS_PROMPT(top3)
+    prompt: ACTION_IDEAS_PROMPT(top3, representative_quotes)
   })
-  //   Input: top 3 themes with labels and quotes
-  //   Output: exactly 3 action idea strings
+  //   Input: top 3 themes plus 3 overall representative quotes
+  //   Output: exactly 3 structured action idea objects
   //   Cost: FREE (Gemini Flash free tier, ~150 tokens)
 
   // ── Step 12: Generate pulse summary (1 LLM call) ───────────
@@ -287,16 +288,16 @@ FUNCTION weeklyThemeClassification():
   // ── Step 13: Assemble Review Pulse ─────────────────────────
   pulse = {
     period: "Rolling 12 weeks ending {today}",
-    product: "INDmoney",
+    product: "Groww",
     total_reviews_analyzed: reviews.length,
     average_rating: mean(reviews.map(r => r.rating)),
     top_themes: top5.map((t, i) => ({
       theme: t.label,
-      rank: i + 1,
-      quotes: t.quotes OR []    // only top 3 have quotes
+      rank: i + 1
     })),
+    representative_quotes: representative_quotes,
     weekly_summary: pulse_summary,
-    action_ideas: action_ideas,  // exactly 3 items
+    action_ideas: action_ideas,  // exactly 3 structured objects
     top_customer_themes: top3.map(t => t.label),
     source: "Google Play Store Reviews"
   }
@@ -318,47 +319,35 @@ Matches spec section 7.8:
 ```json
 {
   "period": "Rolling 12 weeks ending 2026-04-26",
-  "product": "INDmoney",
+  "product": "Groww",
   "total_reviews_analyzed": 180,
   "average_rating": 3.2,
   "top_themes": [
     {
       "theme": "Nominee Updates",
-      "rank": 1,
-      "quotes": [
-        "I am unable to update nominee details...",
-        "Nominee update is taking too long...",
-        "I cannot understand the nominee change process..."
-      ]
+      "rank": 1
     },
     {
       "theme": "Login Issues",
-      "rank": 2,
-      "quotes": [
-        "The login OTP does not work...",
-        "I keep getting logged out...",
-        "Login failed after update..."
-      ]
+      "rank": 2
     },
     {
       "theme": "Statement Downloads",
-      "rank": 3,
-      "quotes": [
-        "I cannot find my capital gains statement...",
-        "Statement download is confusing...",
-        "Tax report is hard to locate..."
-      ]
+      "rank": 3
     },
     {
       "theme": "SIP Mandate Issues",
-      "rank": 4,
-      "quotes": []
+      "rank": 4
     },
     {
       "theme": "App Crashes",
-      "rank": 5,
-      "quotes": []
+      "rank": 5
     }
+  ],
+  "representative_quotes": [
+    "I am unable to update nominee details...",
+    "The login OTP does not work...",
+    "I cannot find my capital gains statement..."
   ],
   "weekly_summary": "This week, Google Play reviews continue to show recurring friction around nominee updates, login reliability, and statement downloads...",
   "action_ideas": [
@@ -371,7 +360,7 @@ Matches spec section 7.8:
 }
 ```
 
-Only top 3 themes carry quotes (3 quotes each = 9 total). Themes ranked 4–5 have empty quote arrays.
+Quotes are stored once at `representative_quotes` (3 total). `top_themes` contains only ranked theme metadata.
 
 ---
 
@@ -385,7 +374,7 @@ Minimize LLM calls. Use the cheapest model. Prefer algorithmic approaches over L
 
 | Task | Method | Model | LLM Calls | Notes |
 |---|---|---|---|---|
-| Review embedding | Gemini Embedding API (batched) | text-embedding-004 | 0 (embedding, not LLM) | ~1 API call for new reviews (batched). Cached per review. |
+| Review embedding | Gemini Embedding API | gemini-embedding-001 | 0 (embedding, not LLM) | Cached per review. |
 | Dimensionality reduction | UMAP (local) | N/A | 0 | Runs locally, no API |
 | Clustering | HDBSCAN (local) | N/A | 0 | Runs locally, no API |
 | c-TF-IDF labels | scikit-learn (local) | N/A | 0 | Runs locally, no API |
@@ -403,7 +392,7 @@ Minimize LLM calls. Use the cheapest model. Prefer algorithmic approaches over L
 | Pulse summary | 1 | Gemini 2.5 Flash | ~350 |
 | **Total LLM calls** | **3** | | **~700 tokens** |
 
-Additionally, **1 embedding API call** (batched) for new reviews using Gemini text-embedding-004. This is not an LLM call.
+Additionally, embedding API calls run for new reviews using Gemini gemini-embedding-001. This is not an LLM call.
 
 At 3 LLM calls per weekly run, this is far within Gemini 2.5 Flash free tier limits (10 RPM, 500 RPD).
 
@@ -412,7 +401,7 @@ At 3 LLM calls per weekly run, this is far within Gemini 2.5 Flash free tier lim
 **Label Refinement Prompt:**
 
 ```
-You are classifying customer review themes for the INDmoney app.
+You are classifying customer review themes for the Groww app.
 
 Below are keyword sets extracted from review clusters via c-TF-IDF.
 For each cluster, produce a short human-readable theme name (2-4 words).
@@ -440,7 +429,7 @@ Return JSON:
 **Action Ideas Prompt:**
 
 ```
-Given the top 3 customer complaint themes from INDmoney Google Play
+Given the top 3 customer complaint themes from Groww Google Play
 reviews and representative quotes, suggest exactly 3 actionable
 product improvements. Each idea must be one concise sentence.
 
@@ -460,7 +449,7 @@ Return JSON:
 **Pulse Summary Prompt:**
 
 ```
-Summarize this week's Google Play Store review trends for INDmoney
+Summarize this week's Google Play Store review trends for Groww
 in 250 words or less. Cover the top themes, notable changes,
 and overall sentiment. Write for an internal product/ops audience.
 
@@ -480,7 +469,7 @@ Write a concise weekly pulse summary.
 
 ### 5.1 Predefined Categories
 
-Based on INDmoney's known issue landscape from Google Play reviews:
+Based on Groww's known issue landscape from Google Play reviews:
 
 | # | Predefined Theme | Typical Keywords |
 |---|---|---|
@@ -668,26 +657,42 @@ Stored in the `review_pulse` table (defined in architecture.md Section 5.1):
 ```json
 {
   "id": "uuid",
-  "product": "INDmoney",
+  "product": "Groww",
   "period": "Rolling 12 weeks ending 2026-04-26",
   "total_reviews_analyzed": 180,
   "average_rating": 3.2,
   "top_themes": [
     {
       "theme": "Nominee Updates",
-      "rank": 1,
-      "quotes": ["...", "...", "..."]
+      "rank": 1
     }
   ],
+  "representative_quotes": ["...", "...", "..."],
   "weekly_summary": "This week, Google Play reviews continue to show...",
-  "action_ideas": ["...", "...", "..."],
+  "action_ideas": [
+    {
+      "idea": "...",
+      "based_on_theme": "Nominee Updates",
+      "evidence": "Quoted snippets from representative_quotes only."
+    },
+    {
+      "idea": "...",
+      "based_on_theme": "Login Issues",
+      "evidence": "..."
+    },
+    {
+      "idea": "...",
+      "based_on_theme": "Statement Downloads",
+      "evidence": "..."
+    }
+  ],
   "top_customer_themes": ["Nominee Updates", "Login Issues", "Statement Downloads"],
   "source": "Google Play Store Reviews",
   "created_at": "2026-04-26T18:00:00Z"
 }
 ```
 
-The stored pulse must contain exactly 5 `top_themes`, exactly 3 quotes for each of the top 3 themes, empty `quotes` arrays for ranks 4-5, and exactly 3 `action_ideas`.
+The stored pulse must contain exactly 5 `top_themes`, exactly 3 overall `representative_quotes`, and exactly 3 structured `action_ideas` objects (`idea`, `based_on_theme`, `evidence`).
 
 ### 7.4 Edge Cases (Per edgeCase.md)
 
@@ -851,7 +856,7 @@ function maskPII(text: string): PIIMaskResult {
 | id | UUID / INTEGER | Primary key |
 | review_id | FK | References reviews.id, unique |
 | embedding | JSON | 768-dim vector as JSON array |
-| model | TEXT | `"text-embedding-004"` |
+| model | TEXT | `"gemini-embedding-001"` |
 | created_at | TIMESTAMP | Embedding generation time |
 
 ### 10.2 Theme Snapshots Table (New)
@@ -891,13 +896,13 @@ interface ClusteringConfig {
   pipeline: {
     rolling_window_weeks: 12;
     max_themes: 5;
-    top_themes_for_quotes: 3;
-    quotes_per_theme: 3;
+    top_action_themes: 3;
+    representative_quotes_count: 3;
     pulse_summary_max_words: 250;
     action_ideas_count: 3;
   };
   embedding: {
-    model: "text-embedding-004";
+    model: "gemini-embedding-001";
     dimensions: 768;
   };
   llm: {
@@ -913,7 +918,7 @@ interface ClusteringConfig {
 
 | Component | Service | Cost |
 |---|---|---|
-| Review embedding | Gemini text-embedding-004 (free tier) | **$0** |
+| Review embedding | Gemini gemini-embedding-001 (free tier) | **$0** |
 | Dimensionality reduction | UMAP (local) | **$0** |
 | Clustering | HDBSCAN (local) | **$0** |
 | c-TF-IDF label extraction | scikit-learn (local) | **$0** |
@@ -934,7 +939,7 @@ No component in this pipeline costs money. All services use free tiers or run lo
 ```
 scripts/
 ├── cluster_reviews.py          # Main clustering pipeline
-├── requirements-clustering.txt # Python deps (bertopic, umap, hdbscan, sklearn, numpy)
+├── requirements-clustering.txt # Python deps (umap, hdbscan, sklearn, numpy, requests, supabase)
 
 .github/workflows/
 ├── review_ingestion.yml        # Includes clustering step after ingestion
@@ -944,5 +949,5 @@ src/services/
 ├── themeHandoff.ts             # getLatestTopThemes() for Scheduler
 
 src/adapters/
-├── embedding.ts                # Gemini text-embedding-004 adapter (shared with RAG)
+├── embedding.ts                # Gemini gemini-embedding-001 adapter (shared with RAG)
 ```

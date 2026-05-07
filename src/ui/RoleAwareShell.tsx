@@ -15,9 +15,9 @@ export function RoleAwareShell({ children }: RoleAwareShellProps) {
     <div className="app-shell">
       <header className="shell-header">
         <Link className="brand" href="/">
-          INDmoney Ops Intelligence Suite
+          Groww Ops Intelligence Suite
         </Link>
-        <p>Phase 0 scaffold: empty module pages, role-aware navigation, no external API calls.</p>
+        <p>Review intelligence, facts-only FAQ, and advisor scheduling workflows for Groww ops.</p>
       </header>
 
       <nav className="role-nav" aria-label="Role-aware module navigation">

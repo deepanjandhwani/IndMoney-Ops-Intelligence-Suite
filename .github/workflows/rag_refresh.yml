@@ -1,0 +1,63 @@
+name: Smart-Sync RAG Refresh
+
+on:
+  schedule:
+    # 10:00 AM IST daily = 04:30 UTC.
+    - cron: "30 4 * * *"
+  workflow_dispatch:
+
+jobs:
+  rag-refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CHROMA_URL: ${{ secrets.GH_CHROMA_URL }}
+      CHROMA_COLLECTION: smart_sync_kb
+      RAG_SOURCE_MANIFEST_PATH: config/source_urls.json
+      RAG_FEE_EXPLAINER_PATH: config/static_fee_explainer.md
+      RAG_FORCE_REINGEST: "false"
+      RAG_EMBED_STAGGER_MS: "120"
+      RAG_EMBED_MAX_ATTEMPTS: "6"
+      GEMINI_API_KEY: ${{ secrets.GH_GEMINI_API_KEY }}
+      GEMINI_GENERATION_MODEL: gemini-2.5-flash
+      GEMINI_CLASSIFICATION_MODEL: gemini-2.5-flash-lite
+      GEMINI_EMBEDDING_MODEL: gemini-embedding-001
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Validate required secrets
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "Missing GH_GEMINI_API_KEY secret."
+            exit 1
+          fi
+          if [ -z "$CHROMA_URL" ]; then
+            echo "Missing GH_CHROMA_URL secret. It must point to the ChromaDB instance used by the app."
+            exit 1
+          fi
+
+      - name: Refresh Smart-Sync RAG knowledge base
+        run: |
+          mkdir -p artifacts
+          npm run phase3:ingest 2>&1 | tee artifacts/rag-refresh-latest.log
+
+      - name: Upload RAG refresh log
+        uses: actions/upload-artifact@v4
+        with:
+          name: rag-refresh-latest
+          path: artifacts/rag-refresh-latest.log
+          if-no-files-found: error

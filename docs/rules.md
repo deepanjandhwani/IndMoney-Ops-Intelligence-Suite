@@ -31,11 +31,13 @@
 ## Advice Rules
 - NEVER provide: buy/sell/hold, fund recommendations, return 
   predictions, portfolio advice, performance guarantees
-- Refusal message (use exactly this string):
+- Refusal message (use exactly this string, including the trailing
+  SEBI investor-education link required by the M1 brief):
   "I can't provide investment advice, return predictions, or handle 
   personal account information. I can help with facts from approved 
   sources, such as exit load, expense ratio, lock-in, benchmark, 
-  riskometer, fee explanation, or statement download steps."
+  riskometer, fee explanation, or statement download steps. For 
+  investor education, see https://investor.sebi.gov.in/."
 - Verified in: Module F safety eval
 
 ## Citation Rules

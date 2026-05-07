@@ -1,0 +1,55 @@
+name: Review Ingestion And Pulse
+
+on:
+  schedule:
+    - cron: "0 2 * * 1"
+  workflow_dispatch:
+
+jobs:
+  review-pulse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GOOGLE_PLAY_PACKAGE_NAME: com.nextbillion.groww
+      GOOGLE_PLAY_REVIEW_LIMIT: "500"
+      REVIEW_INGESTION_WINDOW_WEEKS: "12"
+      SUPABASE_URL: ${{ secrets.GH_SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.GH_SUPABASE_SERVICE_ROLE_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GH_GEMINI_API_KEY }}
+      GEMINI_GENERATION_MODEL: gemini-2.5-flash
+      GEMINI_EMBEDDING_MODEL: gemini-embedding-001
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Ingest Google Play reviews
+        run: npm run phase2:ingest
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install clustering dependencies
+        run: python3 -m pip install -r scripts/requirements-clustering.txt
+
+      - name: Generate Review Pulse
+        run: npm run phase2:cluster
+
+      - name: Upload Review Pulse JSON artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-pulse-latest
+          path: artifacts/review-pulse-latest.json
+          if-no-files-found: warn
