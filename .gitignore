@@ -31,3 +31,4 @@ chroma.log
 
 # Build / CI artifacts (generated, not source)
 artifacts/
+.vercel
