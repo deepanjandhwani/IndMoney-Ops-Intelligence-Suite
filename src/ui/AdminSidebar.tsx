@@ -6,8 +6,6 @@ import {
   BarChart3,
   TrendingUp,
   ShieldCheck,
-  Search,
-  Calendar,
   ClipboardCheck,
   Home,
   PanelLeftClose,
@@ -22,8 +20,6 @@ const adminNav = [
   { href: "/admin/review-pulse", label: "Review Pulse", icon: BarChart3 },
   { href: "/admin/review-trends", label: "Review Trends", icon: TrendingUp },
   { href: "/admin/hitl", label: "HITL Center", icon: ShieldCheck },
-  { href: "/admin/faq-preview", label: "FAQ Preview", icon: Search },
-  { href: "/admin/scheduler-preview", label: "Scheduler Preview", icon: Calendar },
   { href: "/admin/evals", label: "Evaluations", icon: ClipboardCheck }
 ];
 
