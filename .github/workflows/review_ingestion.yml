@@ -26,7 +26,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install Node dependencies
@@ -40,6 +40,7 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
+          cache-dependency-path: scripts/requirements-clustering.txt
 
       - name: Install clustering dependencies
         run: python3 -m pip install -r scripts/requirements-clustering.txt
