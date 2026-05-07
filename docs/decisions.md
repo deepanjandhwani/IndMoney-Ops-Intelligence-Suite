@@ -241,3 +241,13 @@ Budget impact: Typical case remains 0 LLM calls. Worst case: 2 calls × ~80 toke
 Timeout: 5-second timeout per LLM call. On timeout or error, return null (ask user to clarify, same as regex miss).
 Cost: Free (Gemini free tier)
 Date: 2026-05-06
+
+## ADR-026: Slot selection — regex hardening, state alignment, and always-on LLM fallback
+Decision: Three changes to improve natural-language slot selection in the scheduler:
+(1) Rewrite `matchSlotBySpokenTime` to use a priority cascade: explicit H:MM am/pm → H:MM bare → digit+am/pm → word-hour with spoken minutes (e.g. "eleven thirty") → word-hour alone. Bare digits without colon or am/pm no longer match as hours, preventing "31" in "eleven 31" from being parsed as hour 31.
+(2) Change `check_availability` path to transition to `slot_selection` instead of `closing` when slots are offered, so the next turn gets the same slot-parsing + LLM recovery as a direct booking flow.
+(3) Remove `isSchedulerLlmEnabled()` gate from `selectSlotLlm` only. Slot LLM fallback now fires whenever regex fails and GEMINI_API_KEY is set. Other LLM fallbacks (intent, topic, confirmation, booking code) remain behind `SCHEDULER_LLM_FALLBACK=true`.
+Reason: User reported "Can you go with the eleven 31?" failing to select slot 2 (11:30 am). Root cause: bare `\d{1,2}` regex matched "31" as hour before word "eleven" was considered. The `closing` state had weaker slot recovery than `slot_selection`. Slot selection is the highest-impact LLM fallback since it directly blocks booking completion.
+Alternative considered: Run Gemini on every scheduler turn (nextleap-voice-agent style) — rejected due to latency on voice and cost concerns. Conditional invocation keeps the happy path at 0 LLM calls.
+Cost: Free (same Gemini free tier; adds at most 1 LLM call when regex misses a slot choice)
+Date: 2026-05-07

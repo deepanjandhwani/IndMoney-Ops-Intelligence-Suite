@@ -60,7 +60,6 @@ export async function selectSlotLlm(
   userMessage: string,
   slots: SlotOption[]
 ): Promise<SlotFallbackResult> {
-  if (!isSchedulerLlmEnabled()) return null;
   if (slots.length === 0) return null;
 
   const apiKey = process.env.GEMINI_API_KEY;

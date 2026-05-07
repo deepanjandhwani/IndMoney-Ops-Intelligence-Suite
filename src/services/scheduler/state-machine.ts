@@ -387,20 +387,14 @@ async function handleBookingCode(
   });
 }
 
-async function handleSlotSelection(text: string, context: SchedulerSessionContext): Promise<SchedulerOutput> {
-  let slot = selectSlot(text, context.slots_offered ?? []);
-  if (!slot) {
-    const llmResult = await selectSlotLlm(text, context.slots_offered ?? []);
-    if (llmResult) {
-      slot = llmResult.slot;
-    } else {
-      return respond("Please reply with one of the offered slot numbers, or name a different day/time in IST.", {
-        ...context,
-        retry_count: context.retry_count + 1
-      });
-    }
+function resolveSelectedSlot(slot: SlotOption, context: SchedulerSessionContext): SchedulerOutput {
+  const effectiveIntent = context.intent === "check_availability" ? "book_new" : (context.intent ?? "book_new");
+  if (!context.topic) {
+    return respond(
+      `Great, I'll hold ${slot.label} for you.\n\n${buildTopicMenu()}`,
+      { ...context, intent: effectiveIntent, selected_slot: slot, state: "topic_collection", retry_count: 0 }
+    );
   }
-
   return respond(
     [
       "Please confirm your booking:",
@@ -409,13 +403,30 @@ async function handleSlotSelection(text: string, context: SchedulerSessionContex
       "",
       'Reply "yes" to confirm or "no" to pick a different slot.'
     ].join("\n"),
-    {
-      ...context,
-      selected_slot: slot,
-      state: "confirmation",
-      retry_count: 0
-    }
+    { ...context, intent: effectiveIntent, selected_slot: slot, state: "confirmation", retry_count: 0 }
   );
+}
+
+async function handleSlotSelection(text: string, context: SchedulerSessionContext): Promise<SchedulerOutput> {
+  if (isYes(text) && context.slots_offered?.length) {
+    return respond(
+      `${formatOfferedSlots(context.slots_offered)}\n\nReply with the slot number you prefer.`,
+      { ...context, intent: context.intent === "check_availability" ? "book_new" : (context.intent ?? "book_new"), retry_count: 0 }
+    );
+  }
+
+  const slot = selectSlot(text, context.slots_offered ?? [])
+    ?? (await selectSlotLlm(text, context.slots_offered ?? []))?.slot
+    ?? null;
+
+  if (!slot) {
+    return respond("Please reply with one of the offered slot numbers, or name a different day/time in IST.", {
+      ...context,
+      retry_count: context.retry_count + 1
+    });
+  }
+
+  return resolveSelectedSlot(slot, context);
 }
 
 async function handleConfirmation(
@@ -570,16 +581,24 @@ async function offerAvailability(
   }
 
   if (context.intent === "check_availability") {
-    const text =
-      slots.length > 0
-        ? `${formatOfferedSlots(slots)}\n\nWould you like to book one of these slots?`
-        : "I could not find available advisor slots for that preference. You can name a different day/time in IST.";
-    return respond(text, {
-      ...context,
-      slots_offered: slots,
-      state: slots.length > 0 ? "closing" : "time_collection",
-      retry_count: 0
-    });
+    if (slots.length === 0) {
+      return respond(
+        "I could not find available advisor slots for that preference. You can name a different day/time in IST.",
+        { ...context, slots_offered: slots, state: "time_collection", retry_count: 0 }
+      );
+    }
+    return {
+      response_text: `${formatOfferedSlots(slots)}\n\nWould you like to book one of these slots?`,
+      next_state: "slot_selection",
+      context: {
+        ...context,
+        slots_offered: slots,
+        state: "slot_selection",
+        last_prompt: formatOfferedSlots(slots),
+        retry_count: 0
+      },
+      slots_offered: slots
+    };
   }
 
   if (slots.length === 0) {
@@ -660,14 +679,16 @@ async function tryStateScopedTurn(
   }
 
   if (context.state === "slot_selection" && context.slots_offered?.length) {
-    const slot = selectSlot(text, context.slots_offered);
-    if (slot) {
-      return handleSlotSelection(text, context);
+    if (isYes(text)) {
+      return null;
     }
 
-    const llmSlot = await selectSlotLlm(text, context.slots_offered);
-    if (llmSlot) {
-      return handleSlotSelection(text, context);
+    const slot = selectSlot(text, context.slots_offered)
+      ?? (await selectSlotLlm(text, context.slots_offered))?.slot
+      ?? null;
+
+    if (slot) {
+      return resolveSelectedSlot(slot, context);
     }
 
     const correction = resolveDayPreference(text, deps.now?.() ?? new Date());
@@ -928,34 +949,90 @@ const WORD_TO_NUM: Record<string, number> = {
   seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12
 };
 
+const SPOKEN_MINUTES: Record<string, number> = {
+  "o'clock": 0, "oclock": 0, "hundred": 0,
+  "oh one": 1, "oh two": 2, "oh three": 3, "oh four": 4, "oh five": 5,
+  "five": 5, "ten": 10, "fifteen": 15, "twenty": 20,
+  "twenty five": 25, "thirty": 30, "thirty five": 35,
+  "forty": 40, "forty five": 45, "fifty": 50, "fifty five": 55
+};
+
 function matchSlotBySpokenTime(text: string, slots: SlotOption[]) {
-  let time = text.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
-
-  if (!time) {
-    const wordMatch = text.match(new RegExp(`\\b(${Object.keys(WORD_TO_NUM).join("|")})\\s*(am|pm)?\\b`, "i"));
-    if (wordMatch) {
-      const num = WORD_TO_NUM[wordMatch[1].toLowerCase()];
-      time = [wordMatch[0], String(num), undefined, wordMatch[2]] as unknown as RegExpMatchArray;
-    }
-  }
-
-  if (!time) {
-    return null;
-  }
-
-  const hour = Number(time[1]);
-  const minute = Number(time[2] ?? "0");
-  const ampm = time[3]?.toLowerCase();
   const possibleMinutes = new Set<number>();
-  if (ampm) {
-    const normalizedHour = ampm === "pm" && hour < 12 ? hour + 12 : ampm === "am" && hour === 12 ? 0 : hour;
-    possibleMinutes.add(normalizedHour * 60 + minute);
-  } else {
-    possibleMinutes.add(hour * 60 + minute);
-    if (hour <= 12) {
-      possibleMinutes.add((hour + 12) * 60 + minute);
+
+  // 1) Prefer explicit H:MM am/pm (e.g. "11:30 am", "3:30 PM")
+  for (const m of text.matchAll(/\b(\d{1,2}):(\d{2})\s*(am|pm)\b/gi)) {
+    const h = Number(m[1]), min = Number(m[2]), ap = m[3].toLowerCase();
+    if (h >= 1 && h <= 12 && min <= 59) {
+      const norm = ap === "pm" && h < 12 ? h + 12 : ap === "am" && h === 12 ? 0 : h;
+      possibleMinutes.add(norm * 60 + min);
     }
   }
+
+  // 2) H:MM without am/pm (e.g. "11:30") — try both 12h interpretations
+  if (possibleMinutes.size === 0) {
+    for (const m of text.matchAll(/\b(\d{1,2}):(\d{2})\b/g)) {
+      const h = Number(m[1]), min = Number(m[2]);
+      if (h > 23 || min > 59) continue;
+      possibleMinutes.add(h * 60 + min);
+      if (h <= 12) possibleMinutes.add((h + 12) * 60 + min);
+    }
+  }
+
+  // 3) Bare digit + am/pm without colon (e.g. "11 am", "3pm")
+  if (possibleMinutes.size === 0) {
+    for (const m of text.matchAll(/\b(\d{1,2})\s*(am|pm)\b/gi)) {
+      const h = Number(m[1]), ap = m[2].toLowerCase();
+      if (h >= 1 && h <= 12) {
+        const norm = ap === "pm" && h < 12 ? h + 12 : ap === "am" && h === 12 ? 0 : h;
+        possibleMinutes.add(norm * 60);
+      }
+    }
+  }
+
+  // 4) Word-hour with optional spoken minutes (e.g. "eleven thirty", "eleven 30", "twelve")
+  if (possibleMinutes.size === 0) {
+    const wordKeys = Object.keys(WORD_TO_NUM).join("|");
+    const spokenMinKeys = Object.keys(SPOKEN_MINUTES).join("|");
+    const wordTimeRe = new RegExp(
+      `\\b(${wordKeys})\\s+(?:(${spokenMinKeys})|(\\d{1,2}))\\s*(am|pm)?\\b`,
+      "i"
+    );
+    const wordOnlyRe = new RegExp(`\\b(${wordKeys})\\s*(am|pm)?\\b`, "i");
+
+    const compound = text.match(wordTimeRe);
+    if (compound) {
+      const h = WORD_TO_NUM[compound[1].toLowerCase()];
+      const min = compound[2] != null
+        ? SPOKEN_MINUTES[compound[2].toLowerCase()] ?? 0
+        : Number(compound[3]);
+      const ap = compound[4]?.toLowerCase();
+      if (min <= 59) {
+        if (ap) {
+          const norm = ap === "pm" && h < 12 ? h + 12 : ap === "am" && h === 12 ? 0 : h;
+          possibleMinutes.add(norm * 60 + min);
+        } else {
+          possibleMinutes.add(h * 60 + min);
+          if (h <= 12) possibleMinutes.add((h + 12) * 60 + min);
+        }
+      }
+    } else {
+      const simple = text.match(wordOnlyRe);
+      if (simple) {
+        const h = WORD_TO_NUM[simple[1].toLowerCase()];
+        const ap = simple[2]?.toLowerCase();
+        if (ap) {
+          const norm = ap === "pm" && h < 12 ? h + 12 : ap === "am" && h === 12 ? 0 : h;
+          possibleMinutes.add(norm * 60);
+        } else {
+          possibleMinutes.add(h * 60);
+          if (h <= 12) possibleMinutes.add((h + 12) * 60);
+        }
+      }
+    }
+  }
+
+  if (possibleMinutes.size === 0) return null;
 
   const matches = slots.filter((slot) => {
     const start = new Date(slot.start_time);
