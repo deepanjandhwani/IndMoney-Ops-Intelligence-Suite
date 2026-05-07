@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
+import { RefreshCw } from "lucide-react";
 
 type Citation = {
   source_url: string | null;
@@ -32,6 +33,7 @@ const EXAMPLE_QUESTIONS: string[] = [
 export function SmartSyncFaqClient({ role }: { role: "Customer" | "Admin" }) {
   const [question, setQuestion] = useState("");
   const [response, setResponse] = useState<FaqResponse | null>(null);
+  const [retryQuestion, setRetryQuestion] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fundCatalog, setFundCatalog] = useState<FundCatalogEntry[]>([]);
@@ -49,8 +51,10 @@ export function SmartSyncFaqClient({ role }: { role: "Customer" | "Admin" }) {
       .catch(() => {});
   }, []);
 
-  async function submitQuestion(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function askQuestion(questionText: string) {
+    const trimmedQuestion = questionText.trim();
+    if (!trimmedQuestion) return;
+
     setIsLoading(true);
     setError(null);
 
@@ -59,7 +63,7 @@ export function SmartSyncFaqClient({ role }: { role: "Customer" | "Admin" }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          question,
+          question: trimmedQuestion,
           selected_funds: Array.from(selectedFunds)
         })
       });
@@ -70,11 +74,21 @@ export function SmartSyncFaqClient({ role }: { role: "Customer" | "Admin" }) {
       }
 
       setResponse(data);
+      setRetryQuestion(
+        data.status === "fund_mismatch" || data.answer.startsWith("Please select at least one fund")
+          ? trimmedQuestion
+          : null
+      );
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "FAQ request failed.");
     } finally {
       setIsLoading(false);
     }
+  }
+
+  async function submitQuestion(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await askQuestion(question);
   }
 
   function fillExample(example: string) {
@@ -195,22 +209,56 @@ export function SmartSyncFaqClient({ role }: { role: "Customer" | "Admin" }) {
           </div>
           <p className="mt-4 whitespace-pre-wrap text-slate-900">{response.answer}</p>
 
-          {response.status === "fund_mismatch" && (response.suggested_funds?.length || response.suggested_fund) ? (
-            <div className="mt-4 flex flex-wrap gap-2">
-              {(response.suggested_funds ?? (response.suggested_fund ? [response.suggested_fund] : [])).map((fund) => (
-                <button
-                  key={fund}
-                  type="button"
-                  onClick={() => {
-                    setSelectedFunds((prev) => new Set([...prev, fund]));
-                  }}
-                  className="rounded-full border border-indigo-300 bg-indigo-50 px-3 py-1 text-xs text-indigo-700 hover:border-indigo-500 hover:bg-indigo-100"
-                >
-                  Add {fund} to selection
-                </button>
-              ))}
-            </div>
-          ) : null}
+          {(() => {
+            const suggestedList =
+              response.suggested_funds && response.suggested_funds.length > 0
+                ? response.suggested_funds
+                : response.suggested_fund
+                  ? [response.suggested_fund]
+                  : [];
+            const showQuickAddChips = response.status === "fund_mismatch" && suggestedList.length > 0;
+            if (!showQuickAddChips && !retryQuestion) {
+              return null;
+            }
+            return (
+              <div
+                className="mt-4 grid gap-3 rounded-2xl border border-slate-200 bg-gradient-to-b from-white to-slate-50 p-4 shadow-sm"
+                role="region"
+                aria-label="Fund selection and retry"
+              >
+                {retryQuestion ? (
+                  <p className="faq-fund-selection-hint text-slate-600">
+                    Select the funds that apply to your question and hit <strong className="text-slate-800">Retry</strong>.
+                  </p>
+                ) : null}
+                {showQuickAddChips ? (
+                  <div className="flex flex-wrap gap-2">
+                    {suggestedList.map((fund) => (
+                      <button
+                        key={fund}
+                        type="button"
+                        onClick={() => setSelectedFunds((prev) => new Set([...prev, fund]))}
+                        className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-800 transition-colors hover:border-indigo-400 hover:bg-indigo-100"
+                      >
+                        Add {fund} to selection
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                {retryQuestion ? (
+                  <button
+                    type="button"
+                    onClick={() => void askQuestion(retryQuestion)}
+                    disabled={isLoading}
+                    className="faq-retry-button"
+                  >
+                    <RefreshCw size={17} aria-hidden strokeWidth={2} />
+                    Retry question
+                  </button>
+                ) : null}
+              </div>
+            );
+          })()}
 
           {response.citations.length > 0 ? (
             <div className="mt-5">

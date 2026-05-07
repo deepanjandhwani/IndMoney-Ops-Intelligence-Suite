@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
+import { RefreshCw } from "lucide-react";
 
 import type { AssistantSessionEventRow } from "@/adapters/supabase/assistant-history-repository";
 import { useAssistantHistory, type AssistantHistorySessionSummary } from "@/ui/useAssistantHistory";
@@ -31,6 +32,7 @@ type FaqMessage = {
   citations?: Citation[];
   status?: string;
   suggestedFunds?: string[];
+  retryQuestion?: string;
 };
 
 type FundCatalogEntry = {
@@ -498,6 +500,9 @@ export function FaqClient() {
 
     const ragStatusLabel = formatRagStatus(data.status, selectedFunds.size, data.health_error);
 
+    const canRetryAfterFundSelection =
+      data.status === "fund_mismatch" || data.answer.startsWith("Please select at least one fund");
+
     appendMessage({
       role: "assistant",
       text: data.answer,
@@ -507,7 +512,8 @@ export function FaqClient() {
         ragStatusLabel && data.pii_masked ? `${ragStatusLabel} \u00B7 details redacted` : ragStatusLabel,
       suggestedFunds: data.status === "fund_mismatch"
         ? (data.suggested_funds ?? (data.suggested_fund ? [data.suggested_fund] : undefined))
-        : undefined
+        : undefined,
+      retryQuestion: canRetryAfterFundSelection ? question : undefined
     });
     history.appendEvent({
       role: "assistant",
@@ -642,26 +648,46 @@ export function FaqClient() {
                   {message.status ? <span className="message-status-pill">{message.status}</span> : null}
                 </div>
                 <div className={`message-body${
-                  (message.suggestedFunds && message.suggestedFunds.length > 0) || message.text.startsWith("Please select at least one fund")
+                  (message.suggestedFunds && message.suggestedFunds.length > 0) || message.retryQuestion || message.text.startsWith("Please select at least one fund")
                     ? " fund-selection-warning"
                     : ""
                 }`}>{renderMarkdown(message.text)}</div>
 
-                {message.suggestedFunds && message.suggestedFunds.length > 0 ? (
-                  <div className="fund-chips fund-chips-inline" aria-label="Add fund to selection">
-                    {message.suggestedFunds.map((fund) => (
+                {(message.suggestedFunds && message.suggestedFunds.length > 0) || message.retryQuestion ? (
+                  <div className="faq-fund-selection-panel" role="region" aria-label="Fund selection and retry">
+                    {message.retryQuestion ? (
+                      <p className="faq-fund-selection-hint">
+                        Select the funds that apply to your question and hit <strong>Retry</strong>.
+                      </p>
+                    ) : null}
+                    {message.suggestedFunds && message.suggestedFunds.length > 0 ? (
+                      <div className="fund-chips">
+                        {message.suggestedFunds.map((fund) => (
+                          <button
+                            key={fund}
+                            type="button"
+                            className="fund-chip"
+                            disabled={viewingReadonly}
+                            onClick={() => {
+                              setSelectedFunds((prev) => new Set([...prev, fund]));
+                            }}
+                          >
+                            Add {shortFundName(fund)} to selection
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                    {message.retryQuestion ? (
                       <button
-                        key={fund}
                         type="button"
-                        className="fund-chip"
-                        disabled={viewingReadonly}
-                        onClick={() => {
-                          setSelectedFunds((prev) => new Set([...prev, fund]));
-                        }}
+                        className="faq-retry-button"
+                        disabled={loading || viewingReadonly}
+                        onClick={() => void routeMessage(message.retryQuestion ?? "")}
                       >
-                        Add {shortFundName(fund)} to selection
+                        <RefreshCw size={17} aria-hidden strokeWidth={2} />
+                        Retry question
                       </button>
-                    ))}
+                    ) : null}
                   </div>
                 ) : null}
 

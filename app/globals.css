@@ -1514,6 +1514,76 @@ button.secondary {
   transform: none;
 }
 
+/* FAQ: fund mismatch — quick-add chips + retry (FaqClient, UnifiedCustomerAssistant) */
+.faq-fund-selection-panel {
+  background: linear-gradient(180deg, var(--card-soft) 0%, var(--card) 100%);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 8px 28px rgb(59 51 43 / 7%);
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 14px 16px 16px;
+}
+
+.faq-fund-selection-panel .fund-chips {
+  gap: 8px;
+  margin-top: 0;
+}
+
+.faq-fund-selection-hint {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  margin: 0;
+  max-width: 42rem;
+}
+
+.faq-retry-button {
+  align-items: center;
+  background: linear-gradient(180deg, #2f6eae 0%, #265f96 100%);
+  border: 1px solid #1d4f7c;
+  border-radius: 12px;
+  box-shadow: 0 4px 14px rgb(38 95 150 / 28%);
+  color: #fefeff;
+  display: inline-flex;
+  gap: 8px;
+  font-size: 0.875rem;
+  font-weight: 720;
+  justify-content: center;
+  letter-spacing: -0.01em;
+  padding: 10px 18px;
+  transition:
+    box-shadow 160ms ease,
+    filter 160ms ease,
+    transform 140ms ease;
+  width: fit-content;
+}
+
+.faq-retry-button:hover:not(:disabled) {
+  box-shadow: 0 6px 18px rgb(38 95 150 / 36%);
+  filter: brightness(1.05);
+}
+
+.faq-retry-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.faq-retry-button:focus-visible {
+  outline: 2px solid rgb(43 108 176 / 55%);
+  outline-offset: 2px;
+}
+
+.faq-retry-button:disabled {
+  cursor: not-allowed;
+  filter: saturate(0.35);
+  opacity: 0.6;
+}
+
+.faq-retry-button svg {
+  flex-shrink: 0;
+}
+
 /* Sidebar advisor CTA */
 .sidebar-cta {
   background: #fff7ec;
