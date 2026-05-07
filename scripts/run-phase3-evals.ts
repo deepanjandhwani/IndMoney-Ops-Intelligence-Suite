@@ -10,8 +10,12 @@
  *   - Markdown file at `EVAL_REPORT_MD_PATH` (default `evals/REPORT.md`)
  *   - Process exit code 1 if any of the eval gates fail.
  */
+import { config as loadEnv } from "dotenv";
 import { mkdirSync, writeFileSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, extname } from "node:path";
+import { dirname, join, extname, resolve } from "node:path";
+
+loadEnv({ path: resolve(process.cwd(), ".env") });
+loadEnv({ path: resolve(process.cwd(), ".env.local"), override: true });
 
 import { createChromaVectorStore } from "../src/rag/chroma";
 import { createSmartSyncFaqService } from "../src/rag/faq";
@@ -23,36 +27,41 @@ import {
   getLlmModelConfig
 } from "../src/adapters/llm/models";
 
-const GOLDEN: { id: string; question: string; expectSourceIds: string[] }[] = [
+const GOLDEN: { id: string; question: string; expectSourceIds: string[]; selectedFunds: string[] }[] = [
   {
     id: "Q1",
     question:
       "What is the exit load for HDFC Banking & Financial Services Fund Direct Growth and why might it be charged?",
-    expectSourceIds: ["src_014", "fee_static_001"]
+    expectSourceIds: ["src_014", "fee_static_001"],
+    selectedFunds: ["HDFC Banking & Financial Services Fund Direct Growth"]
   },
   {
     id: "Q2",
     question:
       "What benchmark does HDFC Nifty Midcap 150 Index Fund Direct Growth track, and where is that stated?",
-    expectSourceIds: ["src_006"]
+    expectSourceIds: ["src_006"],
+    selectedFunds: ["HDFC Nifty Midcap 150 Index Fund Direct Growth", "HDFC Mid-Cap Fund Direct Plan Growth Option"]
   },
   {
     id: "Q3",
     question:
       "What is the expense ratio of HDFC Defence Fund Direct Growth and where is it officially listed?",
-    expectSourceIds: ["src_001"]
+    expectSourceIds: ["src_001"],
+    selectedFunds: ["HDFC Defence Fund Direct Growth"]
   },
   {
     id: "Q4",
     question:
       "Why might an exit load apply when redeeming units of HDFC Value Fund Direct Plan Growth, and how does that relate to general exit-load rules on Groww?",
-    expectSourceIds: ["src_013", "fee_static_001"]
+    expectSourceIds: ["src_013", "fee_static_001"],
+    selectedFunds: ["HDFC Value Fund Direct Plan Growth"]
   },
   {
     id: "Q5",
     question:
       "What is the minimum SIP amount for HDFC Transportation and Logistics Fund Direct Growth, according to the approved scheme page?",
-    expectSourceIds: ["src_002"]
+    expectSourceIds: ["src_002"],
+    selectedFunds: ["HDFC Transportation and Logistics Fund Direct Growth"]
   }
 ];
 
@@ -149,13 +158,18 @@ function runStaticChecks(): { id: string; label: string; pass: boolean; detail: 
     detail: gemini20Hits.length === 0 ? "Clean" : `Found ${gemini20Hits.length} references`
   });
 
-  const pineconeHits = allCode.match(/pinecone/gi) ?? [];
-  const pineconeInEval = pineconeHits.filter((_, i) => i < 2);
+  const prodFiles = tsFiles.filter(
+    (f) => !f.includes("/test/") && !f.includes("/scripts/") && !f.includes("/evals/") && !f.includes("/api/admin/evals/")
+  );
+  const prodCode = prodFiles.map((f) => {
+    try { return readFileSync(f, "utf8"); } catch { return ""; }
+  }).join("\n");
+  const pineconeHits = prodCode.match(/pinecone/gi) ?? [];
   checks.push({
     id: "STATIC2",
-    label: "No Pinecone references in codebase",
-    pass: pineconeHits.length <= 1,
-    detail: pineconeHits.length <= 1 ? "Clean (eval-only mention OK)" : `Found ${pineconeHits.length} references`
+    label: "No Pinecone references in production code",
+    pass: pineconeHits.length === 0,
+    detail: pineconeHits.length === 0 ? "Clean" : `Found ${pineconeHits.length} references in production code`
   });
 
   try {
@@ -329,7 +343,7 @@ async function main() {
 
   // --- Section 1: Golden retrieval ---
   for (const g of GOLDEN) {
-    const row = await withRetries(`golden ${g.id}`, () => faq.answerQuestion(g.question, []));
+    const row = await withRetries(`golden ${g.id}`, () => faq.answerQuestion(g.question, g.selectedFunds));
     const citationIds = row.citations.map((c) => c.source_id);
     const missing = g.expectSourceIds.filter((id) => !citationIds.includes(id));
     const pass =

@@ -90,15 +90,18 @@ function runStaticChecks(): CheckResult[] {
     detail: gemini20Hits.length === 0 ? "Clean" : `Found ${gemini20Hits.length} references`
   });
 
-  const pineconeHits = allCode.match(/pinecone/gi) ?? [];
+  const prodFiles = tsFiles.filter(
+    (f) => !f.includes("/test/") && !f.includes("/scripts/") && !f.includes("/evals/") && !f.includes("/api/admin/evals/")
+  );
+  const prodCode = prodFiles.map((f) => {
+    try { return readFileSync(f, "utf8"); } catch { return ""; }
+  }).join("\n");
+  const pineconeHits = prodCode.match(/pinecone/gi) ?? [];
   checks.push({
     id: "STATIC2",
-    label: "No Pinecone references in codebase",
-    pass: pineconeHits.length <= 1,
-    detail:
-      pineconeHits.length <= 1
-        ? "Clean (eval-only mention OK)"
-        : `Found ${pineconeHits.length} references`
+    label: "No Pinecone references in production code",
+    pass: pineconeHits.length === 0,
+    detail: pineconeHits.length === 0 ? "Clean" : `Found ${pineconeHits.length} references`
   });
 
   try {
