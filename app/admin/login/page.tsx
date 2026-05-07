@@ -1,5 +1,10 @@
+import { Suspense } from "react";
 import { AdminLoginClient } from "@/ui/AdminLoginClient";
 
 export default function AdminLoginPage() {
-  return <AdminLoginClient />;
+  return (
+    <Suspense>
+      <AdminLoginClient />
+    </Suspense>
+  );
 }

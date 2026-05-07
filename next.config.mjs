@@ -9,7 +9,9 @@ const nextConfig = {
       "@huggingface/transformers",
       "onnxruntime-node",
       "@google/generative-ai",
-      "groq-sdk"
+      "groq-sdk",
+      "better-sqlite3",
+      "playwright"
     ]
   }
 };

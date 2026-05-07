@@ -83,7 +83,7 @@ export function buildMetadataFilter(classification: QueryClassification): Where 
     case "regulatory_education":
       return { content_type: "regulatory_education" };
     case "multi_source": {
-      const feeBranch = classification.extracted_fee_type
+      const feeBranch: Where = classification.extracted_fee_type
         ? {
             $and: [
               { content_type: "fee_explanation" },
