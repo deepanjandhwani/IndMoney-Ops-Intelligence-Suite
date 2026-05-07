@@ -8,7 +8,19 @@ const nextConfig = {
       "groq-sdk",
       "better-sqlite3",
       "playwright"
-    ]
+    ],
+    outputFileTracingExcludes: {
+      "*": [
+        "node_modules/onnxruntime-node/**",
+        "node_modules/@chroma-core/default-embed/**",
+        "node_modules/@chroma-core/ai-embeddings-common/**",
+        "node_modules/@huggingface/transformers/**",
+        "node_modules/@img/**",
+        "node_modules/sharp/**",
+        "node_modules/playwright/**",
+        "node_modules/playwright-core/**"
+      ]
+    }
   },
   webpack: (config, { isServer }) => {
     if (isServer) {
