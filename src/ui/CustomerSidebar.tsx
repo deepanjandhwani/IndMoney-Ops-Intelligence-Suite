@@ -28,6 +28,8 @@ export function CustomerSidebar() {
   const router = useRouter();
   const [collapsed, setCollapsed] = useState(true);
   const [loggedIn, setLoggedIn] = useState(false);
+  const [userName, setUserName] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 768px)");
@@ -38,15 +40,32 @@ export function CustomerSidebar() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     try {
       const supabase = createSupabaseBrowserClient();
-      supabase.auth.getUser().then(({ data }) => {
-        setLoggedIn(Boolean(data.user));
+      supabase.auth.getUser().then(async ({ data }) => {
+        if (cancelled) return;
+        const user = data.user;
+        setLoggedIn(Boolean(user));
+        if (!user) { setUserName(null); setUserEmail(null); return; }
+        setUserEmail(user.email ?? null);
+        const metaName = user.user_metadata?.display_name;
+        if (metaName) { setUserName(metaName); return; }
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("display_name")
+          .eq("id", user.id)
+          .single();
+        if (!cancelled) setUserName(profile?.display_name ?? null);
       });
     } catch {
       /* Supabase env vars may not be set */
     }
+    return () => { cancelled = true; };
   }, [pathname]);
+
+  const displayLabel = userName || userEmail || "User";
+  const initial = (userName ?? userEmail ?? "U").charAt(0).toUpperCase();
 
   return (
     <aside
@@ -109,22 +128,39 @@ export function CustomerSidebar() {
           {!collapsed && "Back to Home"}
         </Link>
         {loggedIn ? (
-          <button
-            type="button"
-            onClick={async () => {
-              try {
-                const supabase = createSupabaseBrowserClient();
-                await supabase.auth.signOut();
-              } catch { /* ignore */ }
-              setLoggedIn(false);
-              router.push("/customer/login");
-              router.refresh();
-            }}
-            className={`flex items-center gap-2 text-xs font-semibold text-muted hover:text-danger transition-colors !bg-transparent !shadow-none !p-0 w-full ${collapsed ? "justify-center" : ""}`}
-          >
-            <LogOut className="w-3.5 h-3.5" />
-            {!collapsed && "Sign Out"}
-          </button>
+          <div className={`flex items-center gap-2 ${collapsed ? "flex-col" : ""}`}>
+            <div
+              className="w-7 h-7 rounded-full bg-accent/15 text-accent flex items-center justify-center text-xs font-bold shrink-0"
+              title={displayLabel}
+            >
+              {initial}
+            </div>
+            {!collapsed && (
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold truncate" style={{ color: "var(--ink-soft)" }}>
+                  {displayLabel}
+                </p>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const supabase = createSupabaseBrowserClient();
+                  await supabase.auth.signOut();
+                } catch { /* ignore */ }
+                setLoggedIn(false);
+                setUserName(null);
+                setUserEmail(null);
+                router.push("/customer/login");
+                router.refresh();
+              }}
+              className="!bg-transparent !shadow-none !p-1.5 !rounded-lg text-muted hover:!text-danger hover:!bg-danger/10 transition-colors"
+              title="Sign Out"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
+          </div>
         ) : (
           <Link
             href="/customer/login"
