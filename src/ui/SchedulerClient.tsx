@@ -12,6 +12,7 @@ type SchedulerMessage = {
   text: string;
   slots?: SlotOption[];
   secureLink?: string;
+  myBookingsRedirect?: boolean;
   status?: string;
 };
 
@@ -159,6 +160,7 @@ type VoiceTurnResult = {
   booking_code?: string;
   slots_offered?: SlotOption[];
   secure_link?: string;
+  my_bookings_redirect?: boolean;
   pii_warning?: boolean;
 };
 
@@ -643,6 +645,12 @@ export function SchedulerClient() {
         kind: "booking_link_issued",
         content: JSON.stringify({ issued: true })
       });
+    } else if (result.my_bookings_redirect) {
+      appendMessage({
+        role: "assistant",
+        text: "Your booking request has been captured. Head to My Bookings to complete your personal details. Admin review follows before confirmation.",
+        myBookingsRedirect: true
+      });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -881,6 +889,12 @@ export function SchedulerClient() {
         content:
           "Your booking request has been captured. Finish the secure form from the link (personal details stay out of chat). Admin review follows before confirmation."
       });
+    } else if (data.my_bookings_redirect) {
+      appendMessage({
+        role: "assistant",
+        text: "Your booking request has been captured. Head to My Bookings to complete your personal details. Admin review follows before confirmation.",
+        myBookingsRedirect: true
+      });
     }
   }
 
@@ -991,6 +1005,12 @@ export function SchedulerClient() {
                 {message.secureLink ? (
                   <a className="secure-link-card" href={message.secureLink} target="_blank" rel="noreferrer">
                     Open secure details form
+                  </a>
+                ) : null}
+
+                {message.myBookingsRedirect ? (
+                  <a className="secure-link-card" href="/customer/my-bookings">
+                    Go to My Bookings
                   </a>
                 ) : null}
               </article>

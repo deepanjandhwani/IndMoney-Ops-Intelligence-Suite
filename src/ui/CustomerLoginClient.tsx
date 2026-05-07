@@ -10,6 +10,7 @@ export function CustomerLoginClient() {
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<"login" | "signup">("login");
@@ -24,13 +25,21 @@ export function CustomerLoginClient() {
       const supabase = createSupabaseBrowserClient();
 
       if (mode === "signup") {
-        const { error: signUpError } = await supabase.auth.signUp({
+        const trimmedName = displayName.trim();
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
           email,
-          password
+          password,
+          options: { data: { display_name: trimmedName || undefined } }
         });
         if (signUpError) {
           setError(signUpError.message);
           return;
+        }
+        if (signUpData.user && trimmedName) {
+          await supabase.from("profiles").upsert({
+            id: signUpData.user.id,
+            display_name: trimmedName
+          }, { onConflict: "id" });
         }
         setSignupSuccess(true);
         return;
@@ -103,6 +112,21 @@ export function CustomerLoginClient() {
         )}
 
         <form onSubmit={onSubmit} className="space-y-4">
+          {mode === "signup" ? (
+            <div>
+              <label htmlFor="customer-name" className="text-xs font-semibold text-muted block mb-1">
+                Your Name
+              </label>
+              <input
+                id="customer-name"
+                type="text"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                className="w-full !bg-card-soft !border !border-border !rounded-lg !px-3 !py-2.5 !text-sm !text-foreground"
+                placeholder="e.g. Deepanjan"
+              />
+            </div>
+          ) : null}
           <div>
             <label htmlFor="customer-email" className="text-xs font-semibold text-muted block mb-1">
               Email

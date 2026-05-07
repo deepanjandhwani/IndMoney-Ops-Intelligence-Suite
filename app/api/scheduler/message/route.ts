@@ -19,11 +19,32 @@ async function getCustomerId(): Promise<string | undefined> {
   }
 }
 
+async function getCustomerName(customerId?: string): Promise<string | undefined> {
+  if (!customerId) return undefined;
+  try {
+    const supabase = createSupabaseServerClient();
+    const { data } = await supabase
+      .from("profiles")
+      .select("display_name")
+      .eq("id", customerId)
+      .single();
+    return data?.display_name ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     const inputMode = parseInputMode(request.nextUrl.searchParams.get("mode"));
+    const customerId = await getCustomerId();
+    const customerName = await getCustomerName(customerId);
     const deps = createSchedulerDeps();
-    const output = await getSchedulerGreeting(deps.repository, inputMode);
+    const output = await getSchedulerGreeting(deps.repository, inputMode, customerName);
+
+    if (customerId && output.context) {
+      output.context.customer_id = customerId;
+    }
 
     let tts_audio_base64: string | null = null;
     let tts_content_type = "audio/mpeg";

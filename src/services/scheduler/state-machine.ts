@@ -48,12 +48,13 @@ const MAX_STATE_RETRIES = 3;
 
 export async function getSchedulerGreeting(
   repository: SchedulerLifecycleDeps["repository"],
-  inputMode: InputMode
+  inputMode: InputMode,
+  customerName?: string
 ): Promise<SchedulerOutput> {
   const pulse = await repository.getLatestReviewPulse();
   const context = createInitialSchedulerContext(inputMode);
   return {
-    response_text: buildSchedulerGreeting(pulse?.top_customer_themes ?? []),
+    response_text: buildSchedulerGreeting(pulse?.top_customer_themes ?? [], customerName),
     next_state: context.state,
     context
   };

@@ -97,10 +97,13 @@ def _load_credentials() -> Credentials:
 
     if creds.expired:
         if creds.refresh_token:
-            creds.refresh(Request())
-            with open(tok_path, "w", encoding="utf-8") as fh:
-                fh.write(creds.to_json())
-        else:
+            try:
+                creds.refresh(Request())
+                with open(tok_path, "w", encoding="utf-8") as fh:
+                    fh.write(creds.to_json())
+            except Exception:
+                creds = None
+        if creds is None or not creds.valid:
             from google_auth_oauthlib.flow import InstalledAppFlow
 
             flow = InstalledAppFlow.from_client_secrets_file(str(cred_path), SCOPES)

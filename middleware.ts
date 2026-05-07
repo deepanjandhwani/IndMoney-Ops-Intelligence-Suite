@@ -7,7 +7,10 @@ export async function middleware(request: NextRequest) {
   const isAdminLogin = pathname === "/admin/login";
   const isAdminRoute = pathname.startsWith("/admin") && !isAdminLogin;
   const isAdminApi = pathname.startsWith("/api/admin");
-  const isCustomerProtected = pathname.startsWith("/customer/my-bookings");
+  const isCustomerProtected =
+    pathname.startsWith("/customer/my-bookings") ||
+    pathname.startsWith("/customer/scheduler") ||
+    pathname.startsWith("/customer/faq");
   const isCustomerLogin = pathname === "/customer/login";
 
   if (!isAdminRoute && !isAdminApi && !isCustomerProtected) {
@@ -80,5 +83,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/api/admin/:path*", "/customer/my-bookings/:path*"]
+  matcher: ["/admin/:path*", "/api/admin/:path*", "/customer/my-bookings/:path*", "/customer/scheduler/:path*", "/customer/faq/:path*"]
 };
