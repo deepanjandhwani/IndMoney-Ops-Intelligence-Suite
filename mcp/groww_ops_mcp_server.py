@@ -43,10 +43,20 @@ def _oauth_loopback_port() -> int:
     return int(raw) if raw else 8765
 
 
+def _is_headless() -> bool:
+    return bool(os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("HEADLESS"))
+
+
 def _run_oauth_installed_flow(flow: Any) -> Credentials:
     """
     Use a fixed localhost port by default so authorize redirect URIs match Google Cloud.
+    In headless environments (Railway), raise instead of trying to open a browser.
     """
+    if _is_headless():
+        raise RuntimeError(
+            "Interactive OAuth flow is unavailable in headless mode. "
+            "Pre-provision token.json via GOOGLE_TOKEN_JSON_B64 env var."
+        )
     port = _oauth_loopback_port()
     try:
         return flow.run_local_server(port=port, open_browser=True)
