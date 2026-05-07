@@ -82,6 +82,24 @@ npm run dev
 - Customer view: [http://localhost:3000/customer/faq](http://localhost:3000/customer/faq)
 - Admin view: [http://localhost:3000/admin](http://localhost:3000/admin)
 
+## Using the Platform
+
+### Customer Side
+
+1. Navigate to any customer page (FAQ, Scheduler, My Bookings).
+2. You will be redirected to the **Customer Login** page if not signed in.
+3. Click **Create one** to sign up — enter your name, email, and password.
+4. You will be auto-signed-in immediately after signup (no email verification needed).
+5. Your name and a logout button appear in the sidebar.
+
+### Admin Side
+
+1. Navigate to [/admin](http://localhost:3000/admin) or any admin page.
+2. Sign in with the pre-configured admin credentials:
+   - **Email:** `admin@gmail.com`
+   - **Password:** `admin`
+3. The admin dashboard gives access to Review Pulse, Trends, HITL Centre, and Evaluations.
+
 ## Google OAuth Setup
 
 The FastMCP server requires Google OAuth credentials for Calendar, Sheets, and Gmail.

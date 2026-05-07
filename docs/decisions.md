@@ -242,6 +242,17 @@ Timeout: 5-second timeout per LLM call. On timeout or error, return null (ask us
 Cost: Free (Gemini free tier)
 Date: 2026-05-06
 
+## ADR-027: Auth-protect customer routes, auto-confirm signup, personalized greeting
+Decision: Four changes to customer authentication and experience:
+(1) Middleware now protects `/customer/scheduler`, `/customer/faq`, and `/customer/my-bookings` — unauthenticated users are redirected to `/customer/login`.
+(2) A Postgres BEFORE INSERT trigger on `auth.users` auto-confirms every new signup (`email_confirmed_at = now()`, `email_verified = true`), bypassing Supabase free-tier email delivery.
+(3) After signup, the frontend auto-signs-in via `signInWithPassword` and redirects immediately instead of showing a "check your email" screen.
+(4) Customer name is captured during signup, stored in `profiles.display_name`, and used in the scheduler greeting ("Hi Deepanjan, I can help you..."). The sidebar shows the user's name and a visible logout button.
+Reason: Supabase free-tier email delivery is unreliable — confirmation emails were not arriving, blocking new users from signing in. Auth-protecting customer routes ensures booking data is tied to a `customer_id` and enables the My Bookings page. Middleware sets `Cache-Control: no-store` to prevent browsers from caching auth-gated pages.
+Alternative considered: Custom SMTP provider for confirmation emails (adds cost and config), disable email confirmation via Supabase dashboard (requires dashboard access, not codified).
+Cost: Free
+Date: 2026-05-07
+
 ## ADR-026: Slot selection — regex hardening, state alignment, and always-on LLM fallback
 Decision: Three changes to improve natural-language slot selection in the scheduler:
 (1) Rewrite `matchSlotBySpokenTime` to use a priority cascade: explicit H:MM am/pm → H:MM bare → digit+am/pm → word-hour with spoken minutes (e.g. "eleven thirty") → word-hour alone. Bare digits without colon or am/pm no longer match as hours, preventing "31" in "eleven 31" from being parsed as hour 31.
