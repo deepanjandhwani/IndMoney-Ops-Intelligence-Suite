@@ -1,4 +1,4 @@
-export const SMART_SYNC_COLLECTION = "smart_sync_kb";
+export const SMART_SYNC_COLLECTION = "smart-sync-kb";
 export const EMBEDDING_DIMENSIONS = 768;
 
 export type SourceType = "official_url" | "static_fee_explainer";
