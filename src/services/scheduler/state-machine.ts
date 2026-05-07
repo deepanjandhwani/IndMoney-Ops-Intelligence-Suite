@@ -268,6 +268,25 @@ async function handleTopic(
     return terminal(buildPreparationGuidance(topic), { ...context, topic });
   }
 
+  if (context.selected_slot) {
+    return respond(
+      [
+        "Please confirm your booking:",
+        `  Topic: ${topic}`,
+        `  Slot: ${context.selected_slot.label} (30 min)`,
+        "",
+        'Reply "yes" to confirm or "no" to pick a different slot.'
+      ].join("\n"),
+      {
+        ...context,
+        topic,
+        intent: context.intent ?? "book_new",
+        state: "confirmation",
+        retry_count: 0
+      }
+    );
+  }
+
   return askForTimePreference({ ...context, topic });
 }
 
@@ -781,6 +800,26 @@ async function handleClosing(
   context: SchedulerSessionContext,
   deps: SchedulerLifecycleDeps
 ): Promise<SchedulerOutput> {
+  if (context.slots_offered?.length) {
+    const slot = selectSlot(text, context.slots_offered);
+    const effectiveSlot = slot ?? (await selectSlotLlm(text, context.slots_offered))?.slot ?? null;
+    if (effectiveSlot) {
+      return transitionFromAvailabilityToBooking(effectiveSlot, context);
+    }
+
+    if (isYes(text)) {
+      return respond(
+        `${formatOfferedSlots(context.slots_offered)}\n\nReply with the slot number you prefer.`,
+        {
+          ...context,
+          intent: "book_new",
+          state: "slot_selection",
+          retry_count: 0
+        }
+      );
+    }
+  }
+
   if (isNo(text)) {
     return terminal("Thank you! Feel free to come back anytime you need help.", context);
   }
@@ -814,6 +853,40 @@ async function handleClosing(
       ...context,
       state: "intent_classification",
       retry_count: context.retry_count + 1
+    }
+  );
+}
+
+function transitionFromAvailabilityToBooking(
+  slot: SlotOption,
+  context: SchedulerSessionContext
+): SchedulerOutput {
+  if (!context.topic) {
+    return respond(
+      `Great, I'll hold ${slot.label} for you.\n\n${buildTopicMenu()}`,
+      {
+        ...context,
+        intent: "book_new",
+        selected_slot: slot,
+        state: "topic_collection",
+        retry_count: 0
+      }
+    );
+  }
+  return respond(
+    [
+      "Please confirm your booking:",
+      `  Topic: ${context.topic}`,
+      `  Slot: ${slot.label} (30 min)`,
+      "",
+      'Reply "yes" to confirm or "no" to pick a different slot.'
+    ].join("\n"),
+    {
+      ...context,
+      intent: "book_new",
+      selected_slot: slot,
+      state: "confirmation",
+      retry_count: 0
     }
   );
 }

@@ -198,7 +198,22 @@ function getSpeechRecognitionApi(): WebSpeechRecognitionConstructor | undefined 
   return w.SpeechRecognition ?? w.webkitSpeechRecognition;
 }
 
+let pendingGreetingAudio: { base64: string | null; contentType: string; fallbackText?: string } | null = null;
+let greetingListenerAttached = false;
+
+function drainPendingGreeting() {
+  if (!pendingGreetingAudio) return;
+  const { base64, contentType, fallbackText } = pendingGreetingAudio;
+  pendingGreetingAudio = null;
+  playTtsAudioImmediate(base64, contentType, fallbackText);
+}
+
 function playTtsAudio(base64: string | null, contentType: string, fallbackText?: string) {
+  if (typeof window === "undefined") return;
+  playTtsAudioImmediate(base64, contentType, fallbackText);
+}
+
+function playTtsAudioImmediate(base64: string | null, contentType: string, fallbackText?: string) {
   if (typeof window === "undefined") return;
 
   if (base64) {
@@ -212,6 +227,43 @@ function playTtsAudio(base64: string | null, contentType: string, fallbackText?:
   }
 
   speakWithBrowserFallback(fallbackText);
+}
+
+function playTtsAudioOrDefer(base64: string | null, contentType: string, fallbackText?: string) {
+  if (typeof window === "undefined") return;
+
+  if (base64) {
+    try {
+      const audio = new Audio(`data:${contentType};base64,${base64}`);
+      const promise = audio.play();
+      if (promise) {
+        promise.catch(() => {
+          pendingGreetingAudio = { base64, contentType, fallbackText };
+          if (!greetingListenerAttached) {
+            greetingListenerAttached = true;
+            const handler = () => {
+              drainPendingGreeting();
+              document.removeEventListener("click", handler);
+              document.removeEventListener("keydown", handler);
+              document.removeEventListener("touchstart", handler);
+            };
+            document.addEventListener("click", handler, { once: false });
+            document.addEventListener("keydown", handler, { once: false });
+            document.addEventListener("touchstart", handler, { once: false });
+          }
+        });
+      }
+      return;
+    } catch {
+      // fall through
+    }
+  }
+
+  try {
+    speakWithBrowserFallback(fallbackText);
+  } catch {
+    pendingGreetingAudio = { base64, contentType, fallbackText };
+  }
 }
 
 function speakWithBrowserFallback(text?: string) {
@@ -534,7 +586,7 @@ export function SchedulerClient() {
           content: data.response_text,
           scheduler_state: data.context.state
         });
-        playTtsAudio(data.tts_audio_base64 ?? null, data.tts_content_type ?? "audio/mpeg", data.tts_text ?? data.response_text);
+        playTtsAudioOrDefer(data.tts_audio_base64 ?? null, data.tts_content_type ?? "audio/mpeg", data.tts_text ?? data.response_text);
       })
       .catch(() => {
         const fallback = "Welcome! I can help you book, reschedule, or cancel an advisor appointment. What would you like to do?";
@@ -543,7 +595,6 @@ export function SchedulerClient() {
           role: "assistant",
           text: fallback
         }]);
-        speakWithBrowserFallback(fallback);
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -701,7 +752,6 @@ export function SchedulerClient() {
           role: "assistant",
           text: fallback
         }]);
-        speakWithBrowserFallback(fallback);
       });
 
     setHistoryOpen(false);

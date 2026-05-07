@@ -92,7 +92,7 @@ export function extractBookingCode(input: string) {
 }
 
 export function isYes(input: string) {
-  return /\b(yes|yep|yeah|confirm|ok|okay|please do|go ahead)\b/i.test(input);
+  return /\b(yes|yep|yeah|confirm|ok|okay|please do|go ahead|looks good|sounds good|that works|perfect|sure|absolutely|definitely)\b/i.test(input);
 }
 
 export function isNo(input: string) {
