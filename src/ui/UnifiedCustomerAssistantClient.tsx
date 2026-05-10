@@ -5,6 +5,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { RefreshCw } from "lucide-react";
 
 import type { AssistantSessionEventRow } from "@/adapters/supabase/assistant-history-repository";
+import { notifyCustomerPendingBookingsChanged } from "@/lib/customer-pending-bookings";
 import { SchedulerOutput, SchedulerSessionContext, SlotOption } from "@/services/scheduler/types";
 import { useAssistantHistory, type AssistantHistorySessionSummary } from "@/ui/useAssistantHistory";
 
@@ -291,7 +292,18 @@ export function UnifiedCustomerAssistantClient() {
   const advisorToastShownRef = useRef(false);
   const [trendingThemes, setTrendingThemes] = useState<string[]>([]);
   const [advisorVoiceGate, setAdvisorVoiceGate] = useState<AdvisorVoiceGate>("off");
+  const advisorVoiceGateRef = useRef<AdvisorVoiceGate>("off");
   const advisorGreetingTtsRef = useRef<AdvisorGreetingTtsPayload | null>(null);
+
+  useEffect(() => {
+    advisorVoiceGateRef.current = advisorVoiceGate;
+  }, [advisorVoiceGate]);
+
+  function dismissAdvisorVoiceTapGate() {
+    if (advisorVoiceGateRef.current !== "awaiting_tap") return;
+    advisorGreetingTtsRef.current = null;
+    setAdvisorVoiceGate("off");
+  }
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -313,6 +325,8 @@ export function UnifiedCustomerAssistantClient() {
 
   const handleVoiceTurnResult = useCallback((result: VoiceTurnResult) => {
     lastInputWasVoiceRef.current = true;
+
+    dismissAdvisorVoiceTapGate();
 
     appendMessage({ role: "user", lane: "assistant", text: result.transcript });
     history.appendEvent({
@@ -364,6 +378,7 @@ export function UnifiedCustomerAssistantClient() {
         text: "Your booking request has been captured. Head to My Bookings to complete your personal details. Admin review follows before confirmation.",
         myBookingsRedirect: true
       });
+      notifyCustomerPendingBookingsChanged();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -530,6 +545,7 @@ export function UnifiedCustomerAssistantClient() {
     const shown = (displayText ?? rawText).trim() || effectiveText;
 
     setError(null);
+    dismissAdvisorVoiceTapGate();
     appendMessage({
       role: "user",
       lane: "assistant",
@@ -716,6 +732,8 @@ export function UnifiedCustomerAssistantClient() {
   }
 
   async function sendSchedulerMessage(messageText: string) {
+    dismissAdvisorVoiceTapGate();
+
     let currentContext = schedulerContext;
 
     if (!currentContext) {
@@ -803,6 +821,7 @@ export function UnifiedCustomerAssistantClient() {
         text: "Your booking request has been captured. Head to My Bookings to complete your personal details. Admin review follows before confirmation.",
         myBookingsRedirect: true
       });
+      notifyCustomerPendingBookingsChanged();
     }
   }
 

@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AssistantSessionEventRow } from "@/adapters/supabase/assistant-history-repository";
+import { notifyCustomerPendingBookingsChanged } from "@/lib/customer-pending-bookings";
 import { SchedulerOutput, SchedulerSessionContext, SlotOption } from "@/services/scheduler/types";
 import { useAssistantHistory, type AssistantHistorySessionSummary } from "@/ui/useAssistantHistory";
 
@@ -553,8 +554,13 @@ export function SchedulerClient() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [advisorVoiceGate, setAdvisorVoiceGate] = useState<AdvisorVoiceGate>("off");
+  const advisorVoiceGateRef = useRef<AdvisorVoiceGate>("off");
   const advisorGreetingTtsRef = useRef<AdvisorGreetingTtsPayload | null>(null);
   const [schedulerHydrated, setSchedulerHydrated] = useState(false);
+
+  useEffect(() => {
+    advisorVoiceGateRef.current = advisorVoiceGate;
+  }, [advisorVoiceGate]);
 
   const activeScheduler = useMemo(
     () =>
@@ -649,9 +655,28 @@ export function SchedulerClient() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const flushDeferredAdvisorGreetingToThread = useCallback(() => {
+    const payload = advisorGreetingTtsRef.current;
+    if (advisorVoiceGateRef.current !== "awaiting_tap" || !payload) {
+      return;
+    }
+    advisorGreetingTtsRef.current = null;
+    setAdvisorVoiceGate("off");
+    const revealText = payload.response_text;
+    setMessages((current) => [
+      ...current,
+      {
+        role: "assistant",
+        text: revealText,
+        id: `greeting-${Date.now()}-${current.length}`
+      }
+    ]);
+  }, []);
+
   // ── Voice input ─────────────────────────────────────────────────────────
 
   const handleVoiceTurnResult = useCallback((result: VoiceTurnResult) => {
+    flushDeferredAdvisorGreetingToThread();
     appendMessage({ role: "user", text: result.transcript });
     history.appendEvent({
       role: "user",
@@ -699,9 +724,10 @@ export function SchedulerClient() {
         text: "Your booking request has been captured. Head to My Bookings to complete your personal details. Admin review follows before confirmation.",
         myBookingsRedirect: true
       });
+      notifyCustomerPendingBookingsChanged();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [flushDeferredAdvisorGreetingToThread]);
 
   const voice = useVoiceInput({
     schedulerContext,
@@ -874,6 +900,7 @@ export function SchedulerClient() {
     if (!trimmed || loading || advisorVoiceGate === "playing") return;
 
     setError(null);
+    flushDeferredAdvisorGreetingToThread();
     appendMessage({ role: "user", text: trimmed });
     history.appendEvent({
       role: "user",
@@ -976,6 +1003,7 @@ export function SchedulerClient() {
         text: "Your booking request has been captured. Head to My Bookings to complete your personal details. Admin review follows before confirmation.",
         myBookingsRedirect: true
       });
+      notifyCustomerPendingBookingsChanged();
     }
   }
 
@@ -984,6 +1012,7 @@ export function SchedulerClient() {
 
     const displayText = `Slot ${slot.id}: ${slot.label}`;
     setError(null);
+    flushDeferredAdvisorGreetingToThread();
     appendMessage({ role: "user", text: displayText });
     history.appendEvent({
       role: "user",

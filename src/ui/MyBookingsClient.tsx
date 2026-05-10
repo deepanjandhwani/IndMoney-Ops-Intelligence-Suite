@@ -11,6 +11,7 @@ import {
   FileText,
   Loader2
 } from "lucide-react";
+import { notifyCustomerPendingBookingsChanged } from "@/lib/customer-pending-bookings";
 
 type BookingSummary = {
   id: string;
@@ -66,6 +67,7 @@ export function MyBookingsClient() {
       const d = (await r.json()) as { bookings?: BookingSummary[]; error?: string };
       if (!r.ok) throw new Error(d.error ?? "Failed to load bookings.");
       setBookings(d.bookings ?? []);
+      notifyCustomerPendingBookingsChanged();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

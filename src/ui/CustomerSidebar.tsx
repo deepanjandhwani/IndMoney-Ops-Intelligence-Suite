@@ -13,8 +13,9 @@ import {
   LogOut,
   LogIn
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { createSupabaseBrowserClient } from "@/adapters/supabase/browser-client";
+import { CUSTOMER_PENDING_BOOKINGS_CHANGED_EVENT } from "@/lib/customer-pending-bookings";
 
 let _audioCtx: AudioContext | null = null;
 function unlockAudioAutoplay() {
@@ -40,6 +41,25 @@ export function CustomerSidebar() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [userName, setUserName] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [pendingDetailsCount, setPendingDetailsCount] = useState(0);
+
+  const refreshPendingDetailsCount = useCallback(async () => {
+    try {
+      const r = await fetch("/api/customer/my-bookings/pending-summary");
+      if (r.status === 401) {
+        setPendingDetailsCount(0);
+        return;
+      }
+      const data = (await r.json()) as { pendingSecureDetailsCount?: number; error?: string };
+      if (!r.ok) {
+        setPendingDetailsCount(0);
+        return;
+      }
+      setPendingDetailsCount(data.pendingSecureDetailsCount ?? 0);
+    } catch {
+      setPendingDetailsCount(0);
+    }
+  }, []);
 
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 768px)");
@@ -57,22 +77,40 @@ export function CustomerSidebar() {
         if (cancelled) return;
         const user = data.user;
         setLoggedIn(Boolean(user));
-        if (!user) { setUserName(null); setUserEmail(null); return; }
+        if (!user) {
+          setUserName(null);
+          setUserEmail(null);
+          setPendingDetailsCount(0);
+          return;
+        }
         setUserEmail(user.email ?? null);
         const metaName = user.user_metadata?.display_name;
-        if (metaName) { setUserName(metaName); return; }
+        if (metaName) {
+          setUserName(metaName);
+          if (!cancelled) await refreshPendingDetailsCount();
+          return;
+        }
         const { data: profile } = await supabase
           .from("profiles")
           .select("display_name")
           .eq("id", user.id)
           .single();
         if (!cancelled) setUserName(profile?.display_name ?? null);
+        if (!cancelled) await refreshPendingDetailsCount();
       });
     } catch {
       /* Supabase env vars may not be set */
     }
     return () => { cancelled = true; };
-  }, [pathname]);
+  }, [pathname, refreshPendingDetailsCount]);
+
+  useEffect(() => {
+    const onPendingChanged = () => {
+      void refreshPendingDetailsCount();
+    };
+    window.addEventListener(CUSTOMER_PENDING_BOOKINGS_CHANGED_EVENT, onPendingChanged);
+    return () => window.removeEventListener(CUSTOMER_PENDING_BOOKINGS_CHANGED_EVENT, onPendingChanged);
+  }, [refreshPendingDetailsCount]);
 
   const displayLabel = userName || userEmail || "User";
   const initial = (userName ?? userEmail ?? "U").charAt(0).toUpperCase();
@@ -112,6 +150,19 @@ export function CustomerSidebar() {
         {customerNav.map((item) => {
           const active = pathname === item.href;
           const needsAudioUnlock = item.href === "/customer/scheduler";
+          const showPendingBadge =
+            item.href === "/customer/my-bookings" && loggedIn && pendingDetailsCount > 0;
+          const badgeText = pendingDetailsCount > 9 ? "9+" : String(pendingDetailsCount);
+          const pendingPhrase =
+            pendingDetailsCount === 1
+              ? "needs your details"
+              : "need your details";
+          const linkTitle =
+            collapsed || showPendingBadge
+              ? showPendingBadge
+                ? `${item.label} — ${pendingDetailsCount} booking${pendingDetailsCount === 1 ? "" : "s"} ${pendingPhrase}`
+                : item.label
+              : undefined;
           return (
             <Link
               key={item.href}
@@ -122,9 +173,24 @@ export function CustomerSidebar() {
                   ? "bg-accent/10 text-accent-strong"
                   : "text-muted hover:bg-card-soft hover:text-foreground"
               } ${collapsed ? "justify-center" : ""}`}
-              title={collapsed ? item.label : undefined}
+              title={linkTitle}
+              aria-label={
+                showPendingBadge
+                  ? `${item.label}, ${pendingDetailsCount} booking${pendingDetailsCount === 1 ? "" : "s"} ${pendingPhrase}`
+                  : undefined
+              }
             >
-              <item.icon className="w-[18px] h-[18px] shrink-0" strokeWidth={2} />
+              <span className="relative inline-flex shrink-0">
+                <item.icon className="w-[18px] h-[18px] shrink-0" strokeWidth={2} />
+                {showPendingBadge && (
+                  <span
+                    className="absolute -top-2 -right-2.5 min-w-[16px] h-4 px-0.5 rounded-full bg-red-600 text-white text-[9px] font-extrabold flex items-center justify-center leading-none shadow-md border-2 border-[var(--card)] z-10"
+                    aria-hidden
+                  >
+                    {badgeText}
+                  </span>
+                )}
+              </span>
               {!collapsed && <span className="truncate">{item.label}</span>}
             </Link>
           );
@@ -164,6 +230,7 @@ export function CustomerSidebar() {
                 setLoggedIn(false);
                 setUserName(null);
                 setUserEmail(null);
+                setPendingDetailsCount(0);
                 router.push("/customer/login");
                 router.refresh();
               }}
