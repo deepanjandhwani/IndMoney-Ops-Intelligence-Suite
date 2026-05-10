@@ -49,6 +49,43 @@ describe("Phase 3 RAG retrieval utilities", () => {
     }
   });
 
+  it("dual expense ratio + exit load clears single-fee extraction for broader retrieval", async () => {
+    const classification = await classifyQuery(
+      "Expense ratio of HDFC Defence Fund Direct Growth and why was I charged the exit load?"
+    );
+    expect(classification.category).toBe("multi_source");
+    expect(classification.extracted_fee_type).toBeNull();
+    expect(classification.extracted_topic).toBeNull();
+    const filter = buildMetadataFilter(classification);
+    expect(filter).toEqual({
+      $or: [{ content_type: "scheme_fact" }, { content_type: "fee_explanation" }]
+    });
+  });
+
+  it("dual-fee multi_source scoped to one fund uses broad fee_explanation OR branch", () => {
+    const classification = {
+      category: "multi_source" as const,
+      extracted_scheme_name: "HDFC Defence Fund Direct Growth",
+      extracted_fee_type: null,
+      extracted_topic: null,
+      confidence: 0.8,
+      matched_scheme_names: ["HDFC Defence Fund Direct Growth"],
+      query_scope: "single_fund" as const
+    };
+    const filter = buildMetadataFilter(classification);
+    expect(filter).toEqual({
+      $or: [
+        {
+          $and: [
+            { content_type: "scheme_fact" },
+            { scheme_name: "HDFC Defence Fund Direct Growth" }
+          ]
+        },
+        { content_type: "fee_explanation" }
+      ]
+    });
+  });
+
   it("multi_source metadata filter scopes scheme_fact to a fund when classification is scoped", () => {
     const classification = {
       category: "multi_source" as const,

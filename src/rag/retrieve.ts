@@ -9,12 +9,46 @@ import { VectorStore } from "./chroma";
 const DEFAULT_VECTOR_RESULTS = 10;
 const DEFAULT_CONTEXT_RESULTS = 5;
 const MULTI_SOURCE_CONTEXT_RESULTS = 6;
+/** When the user asks for both ER and exit load, keep a wider rerank budget so overview + exit-load chunks survive. */
+const MULTI_SOURCE_CONTEXT_RESULTS_DUAL = 10;
 const FEE_STATIC_SOURCE_ID = "fee_static_001";
 const FEE_STATIC_TOP_CHUNKS = 2;
 // Sufficiency rule per docs/architecture/ragA.md §5.4:
 // top score must be >= 0.4 AND at least one chunk >= 0.5.
 const MIN_TOP_RELEVANCE = 0.4;
 const STRONG_RELEVANCE_FLOOR = 0.5;
+
+export function dualSchemeFeeTopicsInQuery(query: string): boolean {
+  const lower = query.toLowerCase();
+  return lower.includes("expense ratio") && lower.includes("exit load");
+}
+
+function multiSourceFeePinTopics(
+  query: string,
+  classification: QueryClassification
+): Array<"expense_ratio" | "exit_load"> {
+  if (classification.category !== "multi_source") {
+    return [];
+  }
+  const lower = query.toLowerCase();
+  const hasExpenseRatioAsk = lower.includes("expense ratio");
+  const hasExitLoadAsk = lower.includes("exit load");
+  if (hasExpenseRatioAsk && hasExitLoadAsk) {
+    return ["expense_ratio", "exit_load"];
+  }
+
+  const fromTopic =
+    classification.extracted_topic === "expense_ratio" || classification.extracted_topic === "exit_load"
+      ? classification.extracted_topic
+      : null;
+  const fromFeeType =
+    classification.extracted_fee_type === "expense_ratio" || classification.extracted_fee_type === "exit_load"
+      ? classification.extracted_fee_type
+      : null;
+
+  const single = (fromTopic ?? fromFeeType) as "expense_ratio" | "exit_load" | null;
+  return single ? [single] : [];
+}
 
 export async function retrieveContext(input: {
   query: string;
@@ -39,18 +73,24 @@ export async function retrieveContext(input: {
   let ranked = bm25Rerank(input.query, primaryCandidates, topK);
 
   if (input.classification.category === "multi_source") {
+    const candidateCap = dualSchemeFeeTopicsInQuery(input.query)
+      ? MULTI_SOURCE_CONTEXT_RESULTS_DUAL
+      : MULTI_SOURCE_CONTEXT_RESULTS;
     ranked = await mergeFeeStaticChunksForMultiSource({
       query: input.query,
       queryEmbedding,
       vectorStore: input.vectorStore,
-      ranked
+      ranked,
+      candidateCap
     });
     ranked = await pinMultiSourceFeeValueChunks({
+      query: input.query,
       queryEmbedding,
       classification: input.classification,
       vectorStore: input.vectorStore,
       ranked,
-      topK
+      topK,
+      candidateCap
     });
     const matchedFunds = input.classification.matched_scheme_names ?? [];
     if (matchedFunds.length > 3) {
@@ -130,6 +170,7 @@ async function mergeFeeStaticChunksForMultiSource(input: {
   queryEmbedding: number[];
   vectorStore: VectorStore;
   ranked: RetrievalCandidate[];
+  candidateCap?: number;
 }): Promise<RetrievalCandidate[]> {
   const feeRaw = await input.vectorStore.query({
     queryEmbedding: input.queryEmbedding,
@@ -154,7 +195,8 @@ async function mergeFeeStaticChunksForMultiSource(input: {
   const rest = input.ranked.filter((c) => !seen.has(c.id));
   const merged = [...feePicks, ...rest];
 
-  const reranked = bm25Rerank(input.query, merged, MULTI_SOURCE_CONTEXT_RESULTS);
+  const cap = input.candidateCap ?? MULTI_SOURCE_CONTEXT_RESULTS;
+  const reranked = bm25Rerank(input.query, merged, cap);
 
   // Guarantee at least one fee_static chunk survives reranking so the
   // fee explainer citation always appears for multi_source answers.
@@ -167,14 +209,16 @@ async function mergeFeeStaticChunksForMultiSource(input: {
 }
 
 async function pinMultiSourceFeeValueChunks(input: {
+  query: string;
   queryEmbedding: number[];
   classification: QueryClassification;
   vectorStore: VectorStore;
   ranked: RetrievalCandidate[];
   topK: number;
+  candidateCap: number;
 }): Promise<RetrievalCandidate[]> {
-  const feeTopic = input.classification.extracted_topic ?? input.classification.extracted_fee_type;
-  if (feeTopic !== "expense_ratio" && feeTopic !== "exit_load") {
+  const feeTopics = multiSourceFeePinTopics(input.query, input.classification);
+  if (feeTopics.length === 0) {
     return input.ranked;
   }
 
@@ -185,23 +229,34 @@ async function pinMultiSourceFeeValueChunks(input: {
     return input.ranked;
   }
 
-  const pinned = bestFeeValueChunkPerFund(input.ranked, matchedFunds, feeTopic);
-  const pinnedFunds = new Set(
-    pinned
-      .map((candidate) => candidate.metadata.scheme_name)
-      .filter((schemeName): schemeName is string => Boolean(schemeName))
-  );
-  const missingFunds = matchedFunds.filter((fund) => !pinnedFunds.has(fund));
+  const pinnedById = new Map<string, RetrievalCandidate>();
 
-  if (missingFunds.length > 0) {
-    const backfill = await input.vectorStore.query({
-      queryEmbedding: input.queryEmbedding,
-      where: feeValueBackfillFilter(missingFunds, feeTopic),
-      nResults: Math.max(4, missingFunds.length * 2)
-    });
-    pinned.push(...bestFeeValueChunkPerFund(backfill, missingFunds, feeTopic));
+  for (const feeTopic of feeTopics) {
+    let topicPinned = bestFeeValueChunkPerFund(input.ranked, matchedFunds, feeTopic);
+    const pinnedFunds = new Set(
+      topicPinned
+        .map((candidate) => candidate.metadata.scheme_name)
+        .filter((schemeName): schemeName is string => Boolean(schemeName))
+    );
+    const missingFunds = matchedFunds.filter((fund) => !pinnedFunds.has(fund));
+
+    if (missingFunds.length > 0) {
+      const backfill = await input.vectorStore.query({
+        queryEmbedding: input.queryEmbedding,
+        where: feeValueBackfillFilter(missingFunds, feeTopic),
+        nResults: Math.max(4, missingFunds.length * 2)
+      });
+      topicPinned = topicPinned.concat(bestFeeValueChunkPerFund(backfill, missingFunds, feeTopic));
+    }
+
+    for (const candidate of topicPinned) {
+      if (!pinnedById.has(candidate.id)) {
+        pinnedById.set(candidate.id, candidate);
+      }
+    }
   }
 
+  const pinned = [...pinnedById.values()];
   if (pinned.length === 0) {
     return input.ranked;
   }
@@ -216,7 +271,7 @@ async function pinMultiSourceFeeValueChunks(input: {
     ...input.ranked.filter((candidate) => !pinnedIds.has(candidate.id))
   ];
 
-  return merged.slice(0, Math.max(input.topK, MULTI_SOURCE_CONTEXT_RESULTS));
+  return merged.slice(0, Math.max(input.topK, input.candidateCap));
 }
 
 function bestFeeValueChunkPerFund(

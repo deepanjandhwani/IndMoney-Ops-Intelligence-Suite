@@ -146,11 +146,28 @@ function heuristicClassification(query: string): QueryClassification {
   const hasFeeValueTerm = lower.includes("exit load") || lower.includes("expense ratio");
   const hasExplanationIntent = lower.includes("why") || lower.includes("charged") || lower.includes("how does it work") || lower.includes("explain");
   const hasConjunction = lower.includes(" and ") || lower.includes(" also ");
+  const asksExpenseRatioAndExitLoad =
+    lower.includes("exit load") && lower.includes("expense ratio");
+
   if (hasFeeValueTerm && hasExplanationIntent) {
-    return classification("multi_source", null, feeType, topic, 0.8);
+    // Combined ER + exit load: clear single-fee extraction so retrieval can use
+    // all fee_explainer chunks; retrieve.ts pins BOTH scheme fee topics separately.
+    return classification(
+      "multi_source",
+      null,
+      asksExpenseRatioAndExitLoad ? null : feeType,
+      asksExpenseRatioAndExitLoad ? null : topic,
+      0.8
+    );
   }
   if (hasFeeValueTerm && hasConjunction && (lower.includes("what is") || lower.includes("what does"))) {
-    return classification("multi_source", null, feeType, topic, 0.75);
+    return classification(
+      "multi_source",
+      null,
+      asksExpenseRatioAndExitLoad ? null : feeType,
+      asksExpenseRatioAndExitLoad ? null : topic,
+      0.75
+    );
   }
 
   if ((lower.includes("why") || lower.includes("charged")) && (feeType || lower.includes("fee"))) {
