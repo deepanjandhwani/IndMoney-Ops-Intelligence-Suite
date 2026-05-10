@@ -51,6 +51,8 @@ type FundCatalogEntry = {
 };
 
 const schedulerStates = new Set([
+  "intent_classification",
+  "reschedule_scope",
   "topic_collection",
   "topic_collection_optional",
   "time_collection",
@@ -60,6 +62,14 @@ const schedulerStates = new Set([
   "confirmation",
   "cancellation_confirm"
 ]);
+
+type AdvisorGreetingTtsPayload = {
+  tts_audio_base64: string | null;
+  tts_content_type: string;
+  tts_text: string;
+};
+
+type AdvisorVoiceGate = "off" | "fetching" | "awaiting_tap" | "playing";
 
 /**
  * Strips the "HDFC " prefix and trailing "Direct …" suffix for display
@@ -280,6 +290,8 @@ export function UnifiedCustomerAssistantClient() {
   const [showAdvisorToast, setShowAdvisorToast] = useState(false);
   const advisorToastShownRef = useRef(false);
   const [trendingThemes, setTrendingThemes] = useState<string[]>([]);
+  const [advisorVoiceGate, setAdvisorVoiceGate] = useState<AdvisorVoiceGate>("off");
+  const advisorGreetingTtsRef = useRef<AdvisorGreetingTtsPayload | null>(null);
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -417,6 +429,8 @@ export function UnifiedCustomerAssistantClient() {
     try {
       const events = await history.loadSessionTranscript(sessionId);
       setSchedulerContext(undefined);
+      setAdvisorVoiceGate("off");
+      advisorGreetingTtsRef.current = null;
       setMessages(eventsToAssistantMessages(events));
       setViewingReadonly(true);
       readonlySourceSessionIdRef.current = sessionId;
@@ -439,6 +453,8 @@ export function UnifiedCustomerAssistantClient() {
     const prior = readonlySourceSessionIdRef.current;
     history.startNewSession();
     setSchedulerContext(undefined);
+    setAdvisorVoiceGate("off");
+    advisorGreetingTtsRef.current = null;
     setViewingReadonly(false);
     readonlySourceSessionIdRef.current = null;
     setError(null);
@@ -458,6 +474,8 @@ export function UnifiedCustomerAssistantClient() {
   function toolbarNewChat() {
     history.startNewSession();
     setSchedulerContext(undefined);
+    setAdvisorVoiceGate("off");
+    advisorGreetingTtsRef.current = null;
     setViewingReadonly(false);
     readonlySourceSessionIdRef.current = null;
     liveMessagesRef.current = [];
@@ -505,7 +523,7 @@ export function UnifiedCustomerAssistantClient() {
       return;
     }
     const trimmed = rawText.trim();
-    if (!trimmed || loading) {
+    if (!trimmed || loading || advisorVoiceGate === "playing") {
       return;
     }
     const effectiveText = trimmed;
@@ -532,6 +550,8 @@ export function UnifiedCustomerAssistantClient() {
 
       if (isExitToFaq && activeScheduler) {
         setSchedulerContext(undefined);
+        setAdvisorVoiceGate("off");
+        advisorGreetingTtsRef.current = null;
         if (looksLikeFaqIntent(effectiveText) || /\b(question|faq|fund|scheme|fee|nav)\b/i.test(effectiveText)) {
           await sendFaqQuestion(effectiveText);
         } else {
@@ -792,6 +812,8 @@ export function UnifiedCustomerAssistantClient() {
     }
     setLoading(true);
     setError(null);
+    setAdvisorVoiceGate("fetching");
+    advisorGreetingTtsRef.current = null;
     try {
       const greetRes = await fetch("/api/scheduler/message?mode=chat");
       if (!greetRes.ok) throw new Error("Could not start advisor session.");
@@ -809,13 +831,36 @@ export function UnifiedCustomerAssistantClient() {
         content: greeting.response_text,
         scheduler_state: greeting.context.state
       });
-      playTtsAudio(greeting.tts_audio_base64 ?? null, greeting.tts_content_type ?? "audio/mpeg", greeting.tts_text ?? greeting.response_text);
+      advisorGreetingTtsRef.current = {
+        tts_audio_base64: greeting.tts_audio_base64 ?? null,
+        tts_content_type: greeting.tts_content_type ?? "audio/mpeg",
+        tts_text: greeting.tts_text ?? greeting.response_text
+      };
+      setAdvisorVoiceGate("awaiting_tap");
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Assistant request failed.");
+      setAdvisorVoiceGate("off");
+      advisorGreetingTtsRef.current = null;
     } finally {
       setLoading(false);
     }
   }
+
+  const handleAdvisorTapToStart = useCallback(() => {
+    if (advisorVoiceGate !== "awaiting_tap") return;
+    const payload = advisorGreetingTtsRef.current;
+    if (!payload) return;
+    setAdvisorVoiceGate("playing");
+    playTtsWithSpeakStarted(
+      payload.tts_audio_base64,
+      payload.tts_content_type,
+      payload.tts_text,
+      () => {
+        setAdvisorVoiceGate("off");
+        advisorGreetingTtsRef.current = null;
+      }
+    );
+  }, [advisorVoiceGate]);
 
   function appendMessage(message: Omit<AssistantMessage, "id">) {
     setMessages((current) => [
@@ -832,6 +877,8 @@ export function UnifiedCustomerAssistantClient() {
       return;
     }
     setSchedulerContext(undefined);
+    setAdvisorVoiceGate("off");
+    advisorGreetingTtsRef.current = null;
     appendMessage({
       role: "assistant",
       lane: "assistant",
@@ -1101,6 +1148,30 @@ export function UnifiedCustomerAssistantClient() {
                 ) : null}
               </article>
             ))}
+            {!viewingReadonly && advisorVoiceGate === "awaiting_tap" ? (
+              <div className="advisor-voice-gate" role="region" aria-label="Start advisor voice">
+                <button
+                  type="button"
+                  className="advisor-tap-to-start"
+                  onClick={handleAdvisorTapToStart}
+                >
+                  Tap to start
+                </button>
+                <p className="advisor-voice-gate-hint">
+                  Tap to hear the greeting aloud. You can also type a reply below.
+                </p>
+              </div>
+            ) : null}
+            {!viewingReadonly && advisorVoiceGate === "playing" ? (
+              <div
+                className="advisor-voice-gate advisor-voice-gate--processing"
+                role="status"
+                aria-live="polite"
+              >
+                <span className="advisor-voice-spinner" aria-hidden />
+                Starting advisor…
+              </div>
+            ) : null}
             {loading ? <p className="muted">Working…</p> : null}
           </div>
 
@@ -1141,7 +1212,7 @@ export function UnifiedCustomerAssistantClient() {
                     ? "Type your reply or hold the mic\u2026"
                     : "Ask about a fund or use Speak to an Advisor\u2026"
                 }
-                disabled={loading || viewingReadonly}
+                disabled={loading || viewingReadonly || advisorVoiceGate === "playing"}
                 autoComplete="off"
               />
               {voice.supported && activeScheduler ? (
@@ -1150,7 +1221,7 @@ export function UnifiedCustomerAssistantClient() {
                   className={`secondary faq-mic-button${voice.recording ? " faq-mic-button--listening" : ""}${voice.processing ? " faq-mic-button--processing" : ""}`}
                   aria-label={voice.recording ? "Release to send" : voice.processing ? "Processing voice\u2026" : "Hold to speak"}
                   title={voice.recording ? "Release to send" : voice.processing ? "Processing\u2026" : "Hold to speak"}
-                  disabled={loading || viewingReadonly || voice.processing}
+                  disabled={loading || viewingReadonly || voice.processing || advisorVoiceGate === "playing"}
                   onPointerDown={(e) => { e.preventDefault(); voice.startRecording(); }}
                   onPointerUp={() => voice.stopRecording()}
                   onPointerLeave={() => { if (voice.recording) voice.stopRecording(); }}
@@ -1161,7 +1232,7 @@ export function UnifiedCustomerAssistantClient() {
               ) : null}
               <button
                 type="submit"
-                disabled={loading || viewingReadonly || !text.trim()}
+                disabled={loading || viewingReadonly || advisorVoiceGate === "playing" || !text.trim()}
               >
                 {activeScheduler ? "Send" : "Ask"}
               </button>
@@ -1480,6 +1551,79 @@ function speakWithBrowserFallback(text?: string) {
   const utterance = new SpeechSynthesisUtterance(cleaned);
   utterance.lang = "en-IN";
   window.speechSynthesis.speak(utterance);
+}
+
+function playSpeechSynthWithOnStart(text: string | undefined, onStarted: () => void): void {
+  if (!text || typeof window === "undefined" || !window.speechSynthesis) {
+    onStarted();
+    return;
+  }
+  const cleaned = text.replace(/\n+/g, " ").trim();
+  if (!cleaned) {
+    onStarted();
+    return;
+  }
+  const utterance = new SpeechSynthesisUtterance(cleaned);
+  utterance.lang = "en-IN";
+  utterance.onstart = () => onStarted();
+  utterance.onerror = () => onStarted();
+  try {
+    window.speechSynthesis.speak(utterance);
+  } catch {
+    onStarted();
+  }
+}
+
+/** Play TTS from a user gesture; invokes onSpeakStarted when audio/speech actually starts (or after safety timeout). */
+function playTtsWithSpeakStarted(
+  base64: string | null,
+  contentType: string,
+  fallbackText: string | undefined,
+  onSpeakStarted: () => void
+): void {
+  if (typeof window === "undefined") {
+    onSpeakStarted();
+    return;
+  }
+
+  let finished = false;
+  const safetyMs = 3500;
+  const safetyId = window.setTimeout(() => done(), safetyMs);
+
+  function done() {
+    if (finished) return;
+    finished = true;
+    window.clearTimeout(safetyId);
+    onSpeakStarted();
+  }
+
+  if (base64) {
+    try {
+      const audio = new Audio(`data:${contentType};base64,${base64}`);
+      const onPlaying = () => {
+        audio.removeEventListener("playing", onPlaying);
+        done();
+      };
+      audio.addEventListener("playing", onPlaying);
+      audio.addEventListener(
+        "error",
+        () => {
+          audio.removeEventListener("playing", onPlaying);
+          playSpeechSynthWithOnStart(fallbackText, done);
+        },
+        { once: true }
+      );
+      void audio.play().catch(() => {
+        audio.removeEventListener("playing", onPlaying);
+        playSpeechSynthWithOnStart(fallbackText, done);
+      });
+      return;
+    } catch {
+      playSpeechSynthWithOnStart(fallbackText, done);
+    }
+  } else {
+    playSpeechSynthWithOnStart(fallbackText, done);
+  }
 }
 
 function useVoiceInput({ schedulerContext, onResult, onError, onRecordingChange }: UseVoiceInputOptions) {

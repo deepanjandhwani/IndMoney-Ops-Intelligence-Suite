@@ -5,7 +5,8 @@ import {
   generateBookingCode,
   generateUniqueBookingCode,
   isValidBookingCode,
-  parseBookingCodeFromLooseInput
+  parseBookingCodeFromLooseInput,
+  parseIncompleteBookingCodeFromLooseInput
 } from "../src/services/scheduler/booking-code";
 
 describe("booking code generation", () => {
@@ -69,6 +70,20 @@ describe("parseBookingCodeFromLooseInput (voice / STT)", () => {
 
   it("parses phonetic letter words", () => {
     expect(parseBookingCodeFromLooseInput("alpha jay dash sea seven forty two")).toBe("AJ-C742");
+  });
+
+  it("parses common STT letter aliases", () => {
+    expect(parseBookingCodeFromLooseInput("en ell dash hey one two three")).toBe("NL-A123");
+  });
+
+  it("detects nldash1234 as an incomplete booking code", () => {
+    expect(parseIncompleteBookingCodeFromLooseInput("nldash1234")).toBe("NL-1234");
+  });
+
+  it("detects spoken incomplete codes without treating them as valid", () => {
+    const transcript = "N L dash one two three four";
+    expect(parseBookingCodeFromLooseInput(transcript)).toBeNull();
+    expect(parseIncompleteBookingCodeFromLooseInput(transcript)).toBe("NL-1234");
   });
 
   it("returns null for garbage", () => {

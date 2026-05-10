@@ -214,9 +214,58 @@ describe("Phase 5 scheduler workflow", () => {
       deps
     );
 
-    expect(codePrompt.next_state).toBe("topic_collection");
+    expect(codePrompt.next_state).toBe("reschedule_scope");
     expect(codePrompt.context?.booking_code).toBe(bookingOutput.booking_code);
-    expect(codePrompt.response_text).toContain("What would you like the advisor call");
+    expect(codePrompt.response_text).toContain("same discussion topic");
+  });
+
+  it("reschedule scope 1 keeps topic and asks for new time", async () => {
+    const { deps } = testDeps();
+    const bookingOutput = await createBookingThroughChat(deps);
+
+    const reschedule = await processSchedulerMessage("I need to reschedule", undefined, deps);
+    const scope = await processSchedulerMessage(
+      bookingOutput.booking_code ?? "",
+      reschedule.context,
+      deps
+    );
+    expect(scope.next_state).toBe("reschedule_scope");
+
+    const timeStep = await processSchedulerMessage("same topic, just new time", scope.context, deps);
+    expect(timeStep.next_state).toBe("time_collection");
+    expect(timeStep.context?.intent).toBe("reschedule");
+    expect(timeStep.context?.topic).toBe("Account Changes / Nominee");
+    expect(timeStep.context?.booking_code).toBe(bookingOutput.booking_code);
+  });
+
+  it("reschedule scope 2 opens topic menu", async () => {
+    const { deps } = testDeps();
+    const bookingOutput = await createBookingThroughChat(deps);
+
+    const reschedule = await processSchedulerMessage("I need to reschedule", undefined, deps);
+    const scope = await processSchedulerMessage(
+      bookingOutput.booking_code ?? "",
+      reschedule.context,
+      deps
+    );
+
+    const topicMenu = await processSchedulerMessage("2", scope.context, deps);
+    expect(topicMenu.next_state).toBe("topic_collection");
+    expect(topicMenu.context?.intent).toBe("reschedule");
+    expect(topicMenu.response_text).toContain("What would you like the advisor call");
+  });
+
+  it("asks for the missing letter when voice hears an incomplete reschedule code", async () => {
+    const { deps } = testDeps();
+    const reschedule = await processSchedulerMessage("I need to re schedule", undefined, deps);
+
+    const codePrompt = await processSchedulerMessage("nldash1234", reschedule.context, deps);
+
+    expect(codePrompt.next_state).toBe("booking_code_collection");
+    expect(codePrompt.context?.intent).toBe("reschedule");
+    expect(codePrompt.context?.booking_code).toBeUndefined();
+    expect(codePrompt.response_text).toContain("I heard NL-1234");
+    expect(codePrompt.response_text).toContain("need one letter after the dash");
   });
 
   it("pivots from cancellation confirm to new booking when user changes mind", async () => {

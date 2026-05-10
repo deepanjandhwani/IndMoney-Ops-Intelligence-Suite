@@ -275,7 +275,8 @@ export async function submitSecureDetails(
   if (!booking) {
     throw new Error("Secure details link is invalid or expired.");
   }
-  if (!booking.secure_link_expires_at || new Date(booking.secure_link_expires_at) < new Date()) {
+  const now = deps.now?.() ?? new Date();
+  if (!booking.secure_link_expires_at || new Date(booking.secure_link_expires_at) < now) {
     throw new Error("Secure details link has expired.");
   }
 

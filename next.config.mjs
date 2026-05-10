@@ -22,7 +22,14 @@ const nextConfig = {
       ]
     }
   },
-  webpack: (config, { isServer }) => {
+  webpack: (config, { isServer, dev }) => {
+    if (dev && process.env.WATCHPACK_POLLING === "true") {
+      config.watchOptions = {
+        ...config.watchOptions,
+        poll: 1000,
+        aggregateTimeout: 300
+      };
+    }
     if (isServer) {
       config.externals = config.externals || [];
       config.externals.push(

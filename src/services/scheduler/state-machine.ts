@@ -18,9 +18,11 @@ import {
   buildTopicMenu,
   classifySchedulerIntent,
   extractBookingCode,
+  extractIncompleteBookingCode,
   isNegativeWithoutCancel,
   isNo,
   isYes,
+  matchRescheduleScope,
   matchTopic,
   STANDARD_ADVICE_REFUSAL
 } from "./topics";
@@ -33,6 +35,7 @@ import {
   extractBookingCodeLlm
 } from "./llm-step-fallbacks";
 import {
+  BookingRecord,
   InputMode,
   SchedulerIntent,
   SchedulerOutput,
@@ -95,8 +98,13 @@ async function processMaskedMessage(
   }
 
   const retryableStates: SchedulerState[] = [
-    "intent_classification", "topic_collection", "topic_collection_optional",
-    "booking_code_collection", "slot_selection", "time_collection"
+    "intent_classification",
+    "reschedule_scope",
+    "topic_collection",
+    "topic_collection_optional",
+    "booking_code_collection",
+    "slot_selection",
+    "time_collection"
   ];
   if (retryableStates.includes(context.state) && context.retry_count >= MAX_STATE_RETRIES) {
     return respond(
@@ -117,9 +125,12 @@ async function processMaskedMessage(
   }
 
   // Intent pivot runs FIRST so the user can switch intent from any state.
-  const intentRouted = await trySchedulerIntentPivot(text, context, deps);
-  if (intentRouted) {
-    return intentRouted;
+  // `reschedule_scope` owns the turn so phrases like "new time" are not parsed as check_availability.
+  if (context.state !== "reschedule_scope") {
+    const intentRouted = await trySchedulerIntentPivot(text, context, deps);
+    if (intentRouted) {
+      return intentRouted;
+    }
   }
 
   const stateScoped = await tryStateScopedTurn(text, context, deps);
@@ -128,6 +139,8 @@ async function processMaskedMessage(
   }
 
   switch (context.state) {
+    case "reschedule_scope":
+      return handleRescheduleScope(text, context, deps);
     case "topic_collection":
     case "topic_collection_optional":
       return handleTopic(text, context, deps);
@@ -349,6 +362,20 @@ async function handleBookingCode(
 ): Promise<SchedulerOutput> {
   let bookingCode = extractBookingCode(text);
   if (!bookingCode) {
+    const incompleteCode = extractIncompleteBookingCode(text);
+    if (incompleteCode) {
+      return respond(
+        [
+          `I heard ${incompleteCode}, but booking codes need one letter after the dash and then three digits.`,
+          "Please spell the full code like N L dash A 7 4 2."
+        ].join(" "),
+        {
+          ...context,
+          retry_count: context.retry_count + 1
+        }
+      );
+    }
+
     const llmResult = await extractBookingCodeLlm(text);
     if (llmResult) {
       bookingCode = llmResult.booking_code;
@@ -380,12 +407,101 @@ async function handleBookingCode(
     );
   }
 
-  return respond(buildTopicMenu(), {
+  return respond(buildRescheduleScopePrompt(booking), {
     ...context,
     booking_code: booking.booking_code,
-    state: "topic_collection",
+    state: "reschedule_scope",
+    topic: undefined,
     retry_count: 0
   });
+}
+
+async function handleRescheduleScope(
+  text: string,
+  context: SchedulerSessionContext,
+  deps: SchedulerLifecycleDeps
+): Promise<SchedulerOutput> {
+  if (!context.booking_code) {
+    return respond("Please share your booking code in the format LL-LDDD, for example NL-A742.", {
+      ...context,
+      state: "booking_code_collection",
+      retry_count: 0
+    });
+  }
+
+  const classified = classifySchedulerIntent(text);
+  if (classified === "cancel" || classified === "book_new" || classified === "what_to_prepare") {
+    const pivoted = await trySchedulerIntentPivot(text, context, deps);
+    if (pivoted) {
+      return pivoted;
+    }
+  }
+
+  const scope = matchRescheduleScope(text);
+  if (!scope) {
+    if (/\b(re\s*schedule|rescheduling)\b/i.test(text)) {
+      return respond(
+        [
+          "You're rescheduling this booking. Next step:",
+          "Reply 1 to keep your current topic and pick a new time, or 2 to choose a new topic first."
+        ].join("\n"),
+        context
+      );
+    }
+    return respond(
+      [
+        "I didn't catch that.",
+        "Reply 1 (or say same topic / just a new time) to keep your current topic.",
+        "Reply 2 (or say change topic) to choose a new focus for the call."
+      ].join("\n"),
+      { ...context, retry_count: context.retry_count + 1 }
+    );
+  }
+
+  const booking = await deps.repository.getBookingByCode(context.booking_code);
+  if (!booking) {
+    return respond(
+      `I could not find booking ${context.booking_code}. Please check the code and try again.`,
+      { ...context, booking_code: undefined, state: "booking_code_collection", retry_count: 0 }
+    );
+  }
+
+  if (scope === "time_only") {
+    return askForTimePreference({
+      ...context,
+      intent: "reschedule",
+      topic: booking.topic,
+      booking_code: booking.booking_code,
+      preferred_date: undefined,
+      requested_day_label: undefined,
+      time_window: undefined,
+      selected_slot: undefined,
+      slots_offered: undefined,
+      retry_count: 0
+    });
+  }
+
+  return respond(buildTopicMenu(), {
+    ...context,
+    intent: "reschedule",
+    booking_code: booking.booking_code,
+    topic: undefined,
+    state: "topic_collection",
+    selected_slot: undefined,
+    slots_offered: undefined,
+    retry_count: 0
+  });
+}
+
+function buildRescheduleScopePrompt(booking: BookingRecord): string {
+  return [
+    `I found booking ${booking.booking_code} for ${booking.topic} on ${formatSlotIST(booking.slot_start)}.`,
+    "",
+    "Do you want to keep the same discussion topic and only pick a new time, or change the topic as well?",
+    "",
+    "Reply 1 (or say same topic / just a new time) to keep your current topic.",
+    "Reply 2 (or say change topic) to choose a new focus for the call."
+  ].join("\n");
 }
 
 function resolveSelectedSlot(slot: SlotOption, context: SchedulerSessionContext): SchedulerOutput {
@@ -918,6 +1034,9 @@ function isRepeatRequest(text: string) {
 }
 
 function repeatResponse(context: SchedulerSessionContext): SchedulerOutput | null {
+  if (context.state === "reschedule_scope" && context.last_prompt) {
+    return respond(context.last_prompt, context);
+  }
   if (context.state === "slot_selection" && context.slots_offered?.length) {
     return respond(`${formatOfferedSlots(context.slots_offered)}\n\nWhich one should I hold?`, context);
   }
@@ -1109,11 +1228,11 @@ async function trySchedulerIntentPivot(
           }
         );
       }
-      return respond(buildTopicMenu(), {
+      return respond(buildRescheduleScopePrompt(booking), {
         ...context,
         intent: "reschedule",
         booking_code: booking.booking_code,
-        state: "topic_collection",
+        state: "reschedule_scope",
         topic: undefined,
         selected_slot: undefined,
         slots_offered: undefined,

@@ -1,4 +1,4 @@
-import { parseBookingCodeFromLooseInput } from "./booking-code";
+import { parseBookingCodeFromLooseInput, parseIncompleteBookingCodeFromLooseInput } from "./booking-code";
 import { SchedulerIntent, SchedulerTopic, SCHEDULER_TOPICS } from "./types";
 
 export const STANDARD_ADVICE_REFUSAL =
@@ -68,7 +68,7 @@ export function classifySchedulerIntent(input: string): SchedulerIntent | "advic
   if (/\b(cancel|drop|delete)\b/.test(lower)) {
     return "cancel";
   }
-  if (/\b(reschedule|change.*slot|move.*meeting|different.*time)\b/.test(lower)) {
+  if (/\b(re\s*schedule|rescheduling|change.*(slot|time|appointment|meeting|call)|move.*(slot|time|appointment|meeting|call)|shift.*(slot|time|appointment|meeting|call)|different.*time)\b/.test(lower)) {
     return "reschedule";
   }
   if (/\b(prepare|bring|documents?|before.*call)\b/.test(lower)) {
@@ -91,6 +91,10 @@ export function extractBookingCode(input: string) {
   return input.toUpperCase().match(/\b[A-Z]{2}-[A-Z][0-9]{3}\b/)?.[0] ?? null;
 }
 
+export function extractIncompleteBookingCode(input: string) {
+  return parseIncompleteBookingCodeFromLooseInput(input);
+}
+
 export function isYes(input: string) {
   return /\b(yes|yep|yeah|confirm|ok|okay|please do|go ahead|looks good|sounds good|that works|perfect|sure|absolutely|definitely)\b/i.test(input);
 }
@@ -101,6 +105,30 @@ export function isNo(input: string) {
 
 export function isNegativeWithoutCancel(input: string) {
   return /\b(no|nope|different|change|not now)\b/i.test(input) && !/\bcancel\b/i.test(input);
+}
+
+export type RescheduleScopeChoice = "time_only" | "topic_change";
+
+/** Parses reply after we ask: keep topic vs change topic (reschedule flow). */
+export function matchRescheduleScope(text: string): RescheduleScopeChoice | null {
+  const lower = text.toLowerCase().trim();
+  if (!lower) return null;
+
+  if (
+    /\b(2\b|two\b|second\b|change\s+(the\s+)?topic|different\s+topic|new\s+topic|another\s+topic|pick\s+a\s+new\s+topic)\b/.test(
+      lower
+    )
+  ) {
+    return "topic_change";
+  }
+  if (
+    /\b(1\b|one\b|first\b|same\s+topic|keep\s+(the\s+)?topic|only\s+(the\s+)?(time|slot|timing)|just\s+(the\s+)?(time|slot|timing)|just\s+(a\s+)?new\s+time|timing\s+only|new\s+time\s+only|no\s+topic\s+change)\b/.test(
+      lower
+    )
+  ) {
+    return "time_only";
+  }
+  return null;
 }
 
 export function buildPreparationGuidance(topic?: SchedulerTopic) {

@@ -17,6 +17,8 @@ type SchedulerMessage = {
 };
 
 const schedulerStates = new Set([
+  "intent_classification",
+  "reschedule_scope",
   "topic_collection",
   "topic_collection_optional",
   "time_collection",
@@ -200,28 +202,6 @@ function getSpeechRecognitionApi(): WebSpeechRecognitionConstructor | undefined 
   return w.SpeechRecognition ?? w.webkitSpeechRecognition;
 }
 
-let pendingGreetingAudio: { base64: string | null; contentType: string; fallbackText?: string } | null = null;
-let greetingListenerAttached = false;
-let greetingDrainHandler: (() => void) | null = null;
-
-function drainPendingGreeting() {
-  if (!pendingGreetingAudio) return;
-  const { base64, contentType, fallbackText } = pendingGreetingAudio;
-  pendingGreetingAudio = null;
-  playTtsAudioImmediate(base64, contentType, fallbackText);
-}
-
-function resetGreetingListeners() {
-  if (greetingDrainHandler) {
-    document.removeEventListener("click", greetingDrainHandler);
-    document.removeEventListener("keydown", greetingDrainHandler);
-    document.removeEventListener("touchstart", greetingDrainHandler);
-    greetingDrainHandler = null;
-  }
-  greetingListenerAttached = false;
-  pendingGreetingAudio = null;
-}
-
 function playTtsAudio(base64: string | null, contentType: string, fallbackText?: string) {
   if (typeof window === "undefined") return;
   playTtsAudioImmediate(base64, contentType, fallbackText);
@@ -243,41 +223,6 @@ function playTtsAudioImmediate(base64: string | null, contentType: string, fallb
   speakWithBrowserFallback(fallbackText);
 }
 
-function playTtsAudioOrDefer(base64: string | null, contentType: string, fallbackText?: string) {
-  if (typeof window === "undefined") return;
-
-  resetGreetingListeners();
-
-  if (base64) {
-    try {
-      const audio = new Audio(`data:${contentType};base64,${base64}`);
-      const promise = audio.play();
-      if (promise) {
-        promise.catch(() => {
-          pendingGreetingAudio = { base64, contentType, fallbackText };
-          greetingListenerAttached = true;
-          greetingDrainHandler = () => {
-            drainPendingGreeting();
-            resetGreetingListeners();
-          };
-          document.addEventListener("click", greetingDrainHandler);
-          document.addEventListener("keydown", greetingDrainHandler);
-          document.addEventListener("touchstart", greetingDrainHandler);
-        });
-      }
-      return;
-    } catch {
-      // fall through
-    }
-  }
-
-  try {
-    speakWithBrowserFallback(fallbackText);
-  } catch {
-    pendingGreetingAudio = { base64, contentType, fallbackText };
-  }
-}
-
 function speakWithBrowserFallback(text?: string) {
   if (!text || typeof window === "undefined" || !window.speechSynthesis) return;
   const cleaned = text.replace(/\n+/g, " ").trim();
@@ -286,6 +231,87 @@ function speakWithBrowserFallback(text?: string) {
   utterance.lang = "en-IN";
   window.speechSynthesis.speak(utterance);
 }
+
+function playSpeechSynthWithOnStart(text: string | undefined, onStarted: () => void): void {
+  if (!text || typeof window === "undefined" || !window.speechSynthesis) {
+    onStarted();
+    return;
+  }
+  const cleaned = text.replace(/\n+/g, " ").trim();
+  if (!cleaned) {
+    onStarted();
+    return;
+  }
+  const utterance = new SpeechSynthesisUtterance(cleaned);
+  utterance.lang = "en-IN";
+  utterance.onstart = () => onStarted();
+  utterance.onerror = () => onStarted();
+  try {
+    window.speechSynthesis.speak(utterance);
+  } catch {
+    onStarted();
+  }
+}
+
+/** Play TTS from a user gesture; invokes onSpeakStarted when audio/speech actually starts (or after safety timeout). */
+function playTtsWithSpeakStarted(
+  base64: string | null,
+  contentType: string,
+  fallbackText: string | undefined,
+  onSpeakStarted: () => void
+): void {
+  if (typeof window === "undefined") {
+    onSpeakStarted();
+    return;
+  }
+
+  let finished = false;
+  const safetyMs = 3500;
+  const safetyId = window.setTimeout(() => done(), safetyMs);
+
+  function done() {
+    if (finished) return;
+    finished = true;
+    window.clearTimeout(safetyId);
+    onSpeakStarted();
+  }
+
+  if (base64) {
+    try {
+      const audio = new Audio(`data:${contentType};base64,${base64}`);
+      const onPlaying = () => {
+        audio.removeEventListener("playing", onPlaying);
+        done();
+      };
+      audio.addEventListener("playing", onPlaying);
+      audio.addEventListener(
+        "error",
+        () => {
+          audio.removeEventListener("playing", onPlaying);
+          playSpeechSynthWithOnStart(fallbackText, done);
+        },
+        { once: true }
+      );
+      void audio.play().catch(() => {
+        audio.removeEventListener("playing", onPlaying);
+        playSpeechSynthWithOnStart(fallbackText, done);
+      });
+      return;
+    } catch {
+      playSpeechSynthWithOnStart(fallbackText, done);
+    }
+  } else {
+    playSpeechSynthWithOnStart(fallbackText, done);
+  }
+}
+
+type AdvisorVoiceGate = "off" | "awaiting_tap" | "playing";
+type AdvisorGreetingTtsPayload = {
+  response_text: string;
+  tts_audio_base64: string | null;
+  tts_content_type: string;
+  tts_text: string;
+};
 
 function useVoiceInput({ schedulerContext, onResult, onError, onRecordingChange }: UseVoiceInputOptions) {
   const [recording, setRecording] = useState(false);
@@ -526,6 +552,9 @@ export function SchedulerClient() {
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [advisorVoiceGate, setAdvisorVoiceGate] = useState<AdvisorVoiceGate>("off");
+  const advisorGreetingTtsRef = useRef<AdvisorGreetingTtsPayload | null>(null);
+  const [schedulerHydrated, setSchedulerHydrated] = useState(false);
 
   const activeScheduler = useMemo(
     () =>
@@ -576,6 +605,9 @@ export function SchedulerClient() {
       setSchedulerContext(cached.context);
       liveMessagesRef.current = cached.messages;
       liveSchedulerRef.current = cached.context;
+      setAdvisorVoiceGate("off");
+      advisorGreetingTtsRef.current = null;
+      setSchedulerHydrated(true);
       return;
     }
 
@@ -586,11 +618,6 @@ export function SchedulerClient() {
       })
       .then((data: SchedulerOutput & { tts_audio_base64?: string | null; tts_content_type?: string; tts_text?: string }) => {
         setSchedulerContext(data.context);
-        setMessages([{
-          id: `greeting-${Date.now()}`,
-          role: "assistant",
-          text: data.response_text
-        }]);
         history.appendEvent({
           role: "assistant",
           lane: "scheduler",
@@ -598,15 +625,26 @@ export function SchedulerClient() {
           content: data.response_text,
           scheduler_state: data.context.state
         });
-        playTtsAudioOrDefer(data.tts_audio_base64 ?? null, data.tts_content_type ?? "audio/mpeg", data.tts_text ?? data.response_text);
+        advisorGreetingTtsRef.current = {
+          response_text: data.response_text,
+          tts_audio_base64: data.tts_audio_base64 ?? null,
+          tts_content_type: data.tts_content_type ?? "audio/mpeg",
+          tts_text: data.tts_text ?? data.response_text
+        };
+        setAdvisorVoiceGate("awaiting_tap");
       })
       .catch(() => {
         const fallback = "Welcome! I can help you book, reschedule, or cancel an advisor appointment. What would you like to do?";
-        setMessages([{
-          id: "greeting-fallback",
-          role: "assistant",
-          text: fallback
-        }]);
+        advisorGreetingTtsRef.current = {
+          response_text: fallback,
+          tts_audio_base64: null,
+          tts_content_type: "audio/mpeg",
+          tts_text: fallback
+        };
+        setAdvisorVoiceGate("awaiting_tap");
+      })
+      .finally(() => {
+        setSchedulerHydrated(true);
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -674,6 +712,31 @@ export function SchedulerClient() {
     }
   });
 
+  const handleAdvisorTapToStart = useCallback(() => {
+    if (advisorVoiceGate !== "awaiting_tap") return;
+    const payload = advisorGreetingTtsRef.current;
+    if (!payload) return;
+    const { response_text: revealText, tts_audio_base64, tts_content_type, tts_text } = payload;
+    setAdvisorVoiceGate("playing");
+    playTtsWithSpeakStarted(
+      tts_audio_base64,
+      tts_content_type,
+      tts_text,
+      () => {
+        setMessages((current) => [
+          ...current,
+          {
+            role: "assistant",
+            text: revealText,
+            id: `greeting-${Date.now()}-${current.length}`
+          }
+        ]);
+        setAdvisorVoiceGate("off");
+        advisorGreetingTtsRef.current = null;
+      }
+    );
+  }, [advisorVoiceGate]);
+
   // ── History management ──────────────────────────────────────────────────
 
   async function refreshHistoryList() {
@@ -697,6 +760,8 @@ export function SchedulerClient() {
     try {
       const events = await history.loadSessionTranscript(sessionId);
       setSchedulerContext(undefined);
+      setAdvisorVoiceGate("off");
+      advisorGreetingTtsRef.current = null;
       setMessages(eventsToSchedulerMessages(events));
       setViewingReadonly(true);
       readonlySourceSessionIdRef.current = sessionId;
@@ -718,6 +783,8 @@ export function SchedulerClient() {
   function continueFromHistoryPoint() {
     const prior = readonlySourceSessionIdRef.current;
     history.startNewSession();
+    setAdvisorVoiceGate("off");
+    advisorGreetingTtsRef.current = null;
     setSchedulerContext(undefined);
     setViewingReadonly(false);
     readonlySourceSessionIdRef.current = null;
@@ -733,7 +800,8 @@ export function SchedulerClient() {
 
   function toolbarNewChat() {
     history.startNewSession();
-    greetingFetchedRef.current = false;
+    setAdvisorVoiceGate("off");
+    advisorGreetingTtsRef.current = null;
     setSchedulerContext(undefined);
     setViewingReadonly(false);
     readonlySourceSessionIdRef.current = null;
@@ -749,11 +817,6 @@ export function SchedulerClient() {
       })
       .then((data: SchedulerOutput & { tts_audio_base64?: string | null; tts_content_type?: string; tts_text?: string }) => {
         setSchedulerContext(data.context);
-        setMessages([{
-          id: `greeting-${Date.now()}`,
-          role: "assistant",
-          text: data.response_text
-        }]);
         history.appendEvent({
           role: "assistant",
           lane: "scheduler",
@@ -761,15 +824,23 @@ export function SchedulerClient() {
           content: data.response_text,
           scheduler_state: data.context.state
         });
-        playTtsAudio(data.tts_audio_base64 ?? null, data.tts_content_type ?? "audio/mpeg", data.tts_text ?? data.response_text);
+        advisorGreetingTtsRef.current = {
+          response_text: data.response_text,
+          tts_audio_base64: data.tts_audio_base64 ?? null,
+          tts_content_type: data.tts_content_type ?? "audio/mpeg",
+          tts_text: data.tts_text ?? data.response_text
+        };
+        setAdvisorVoiceGate("awaiting_tap");
       })
       .catch(() => {
         const fallback = "Welcome! I can help you book, reschedule, or cancel an advisor appointment. Is there something you need help with?";
-        setMessages([{
-          id: "greeting-fallback",
-          role: "assistant",
-          text: fallback
-        }]);
+        advisorGreetingTtsRef.current = {
+          response_text: fallback,
+          tts_audio_base64: null,
+          tts_content_type: "audio/mpeg",
+          tts_text: fallback
+        };
+        setAdvisorVoiceGate("awaiting_tap");
       });
 
     setHistoryOpen(false);
@@ -800,7 +871,7 @@ export function SchedulerClient() {
     event.preventDefault();
     if (viewingReadonly) return;
     const trimmed = text.trim();
-    if (!trimmed || loading) return;
+    if (!trimmed || loading || advisorVoiceGate === "playing") return;
 
     setError(null);
     appendMessage({ role: "user", text: trimmed });
@@ -909,7 +980,7 @@ export function SchedulerClient() {
   }
 
   function handleSlotClick(slot: SlotOption) {
-    if (viewingReadonly || loading) return;
+    if (viewingReadonly || loading || advisorVoiceGate === "playing") return;
 
     const displayText = `Slot ${slot.id}: ${slot.label}`;
     setError(null);
@@ -987,6 +1058,9 @@ export function SchedulerClient() {
           ) : null}
 
           <div className={`assistant-thread${viewingReadonly ? " assistant-thread--readonly" : ""}`} aria-live="polite">
+            {!viewingReadonly && !schedulerHydrated && messages.length === 0 ? (
+              <p className="muted scheduler-initial-greeting">Loading advisor…</p>
+            ) : null}
             {messages.map((message) => (
               <article className={`assistant-message ${message.role}`} key={message.id}>
                 <div className="message-meta">
@@ -1002,7 +1076,7 @@ export function SchedulerClient() {
                         type="button"
                         className="slot-card"
                         key={slot.id}
-                        disabled={viewingReadonly || loading}
+                        disabled={viewingReadonly || loading || advisorVoiceGate === "playing"}
                         onClick={() => handleSlotClick(slot)}
                       >
                         <span>Option {slot.id}</span>
@@ -1025,6 +1099,31 @@ export function SchedulerClient() {
                 ) : null}
               </article>
             ))}
+            {!viewingReadonly && advisorVoiceGate === "awaiting_tap" ? (
+              <div
+                className="advisor-voice-gate advisor-voice-gate--animated advisor-voice-gate--tap-only"
+                role="region"
+                aria-label="Start advisor voice"
+              >
+                <button
+                  type="button"
+                  className="advisor-tap-to-start advisor-tap-to-start--circle"
+                  onClick={handleAdvisorTapToStart}
+                >
+                  Tap to start
+                </button>
+              </div>
+            ) : null}
+            {!viewingReadonly && advisorVoiceGate === "playing" ? (
+              <div
+                className="advisor-voice-gate advisor-voice-gate--processing advisor-voice-gate--animated"
+                role="status"
+                aria-live="polite"
+              >
+                <span className="advisor-voice-spinner" aria-hidden />
+                Starting advisor…
+              </div>
+            ) : null}
             {loading ? <p className="muted">Working…</p> : null}
           </div>
 
@@ -1048,7 +1147,7 @@ export function SchedulerClient() {
                 value={text}
                 onChange={(event) => setText(event.target.value)}
                 placeholder="Type your reply or hold the mic\u2026"
-                disabled={loading || viewingReadonly}
+                disabled={loading || viewingReadonly || advisorVoiceGate === "playing"}
                 autoComplete="off"
               />
               {voice.supported ? (
@@ -1057,7 +1156,7 @@ export function SchedulerClient() {
                   className={`secondary faq-mic-button${voice.recording ? " faq-mic-button--listening" : ""}${voice.processing ? " faq-mic-button--processing" : ""}`}
                   aria-label={voice.recording ? "Release to send" : voice.processing ? "Processing voice\u2026" : "Hold to speak"}
                   title={voice.recording ? "Release to send" : voice.processing ? "Processing\u2026" : "Hold to speak"}
-                  disabled={loading || viewingReadonly || voice.processing}
+                  disabled={loading || viewingReadonly || voice.processing || advisorVoiceGate === "playing"}
                   onPointerDown={(e) => { e.preventDefault(); voice.startRecording(); }}
                   onPointerUp={() => voice.stopRecording()}
                   onPointerLeave={() => { if (voice.recording) voice.stopRecording(); }}
@@ -1068,7 +1167,7 @@ export function SchedulerClient() {
               ) : null}
               <button
                 type="submit"
-                disabled={loading || viewingReadonly || !text.trim()}
+                disabled={loading || viewingReadonly || advisorVoiceGate === "playing" || !text.trim()}
               >
                 Send
               </button>

@@ -17,6 +17,7 @@ export type SchedulerIntent =
 
 export type SchedulerState =
   | "intent_classification"
+  | "reschedule_scope"
   | "topic_collection"
   | "topic_collection_optional"
   | "time_collection"

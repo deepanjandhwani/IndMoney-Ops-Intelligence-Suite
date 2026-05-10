@@ -1,6 +1,7 @@
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const DIGITS = "0123456789";
 const BOOKING_CODE_PATTERN = /^[A-Z]{2}-[A-Z][0-9]{3}$/;
+const INCOMPLETE_BOOKING_CODE_PATTERN = /^[A-Z]{2}-[0-9]{4}$/;
 const SPOKEN_CODE_WORDS: Record<string, string> = {
   ZERO: "0",
   OH: "0",
@@ -29,7 +30,12 @@ const SPOKEN_CODE_WORDS: Record<string, string> = {
   EIGHTEEN: "18",
   NINETEEN: "19",
   ALPHA: "A",
+  AYE: "A",
+  AY: "A",
+  HEY: "A",
   BRAVO: "B",
+  BEE: "B",
+  BE: "B",
   CHARLIE: "C",
   SEE: "C",
   SEA: "C",
@@ -41,13 +47,17 @@ const SPOKEN_CODE_WORDS: Record<string, string> = {
   HOTEL: "H",
   INDIA: "I",
   EYE: "I",
+  I: "I",
   JULIET: "J",
   JULIETT: "J",
   JAY: "J",
   KILO: "K",
   LIMA: "L",
+  ELL: "L",
+  EL: "L",
   MIKE: "M",
   NOVEMBER: "N",
+  EN: "N",
   OSCAR: "O",
   PAPA: "P",
   QUEBEC: "Q",
@@ -112,6 +122,10 @@ export function isValidBookingCode(bookingCode: string) {
   return BOOKING_CODE_PATTERN.test(bookingCode);
 }
 
+export function isIncompleteBookingCode(bookingCode: string) {
+  return INCOMPLETE_BOOKING_CODE_PATTERN.test(bookingCode);
+}
+
 /**
  * Recover XX-X999 from messy voice/STT text (e.g. "R GDashY133.", "NL A742", "it's NL-A742").
  */
@@ -127,12 +141,21 @@ export function parseBookingCodeFromLooseInput(input: string): string | null {
   return null;
 }
 
+export function parseIncompleteBookingCodeFromLooseInput(input: string): string | null {
+  const direct = parseIncompleteBookingCodeCandidate(input);
+  if (direct) return direct;
+
+  const spoken = normalizeSpokenBookingCode(input);
+  if (spoken !== input) {
+    return parseIncompleteBookingCodeCandidate(spoken);
+  }
+
+  return null;
+}
+
 function parseBookingCodeCandidate(input: string): string | null {
   let s = input.toUpperCase().trim();
-  s = s.replace(/\s*(?:DASH|HYPHEN|MINUS)\s*/gi, "-");
-  s = s.replace(/DASH/gi, "-");
-  s = s.replace(/[^A-Z0-9-]/g, "");
-  s = s.replace(/-+/g, "-");
+  s = normalizeBookingCodeCandidateText(s);
 
   const hyphenated = s.match(/[A-Z]{2}-[A-Z]\d{3}/g);
   if (hyphenated) {
@@ -152,6 +175,38 @@ function parseBookingCodeCandidate(input: string): string | null {
   }
 
   return null;
+}
+
+function parseIncompleteBookingCodeCandidate(input: string): string | null {
+  const s = normalizeBookingCodeCandidateText(input.toUpperCase().trim());
+
+  const hyphenated = s.match(/[A-Z]{2}-\d{4}/g);
+  if (hyphenated) {
+    for (const c of hyphenated) {
+      if (isIncompleteBookingCode(c)) return c;
+    }
+  }
+
+  const compact = s.match(/[A-Z]{2}\d{4}/g);
+  if (compact) {
+    for (const raw of compact) {
+      const inner = /^([A-Z]{2})(\d{4})$/.exec(raw);
+      if (!inner) continue;
+      const code = `${inner[1]}-${inner[2]}`;
+      if (isIncompleteBookingCode(code)) return code;
+    }
+  }
+
+  return null;
+}
+
+function normalizeBookingCodeCandidateText(input: string) {
+  let s = input;
+  s = s.replace(/\s*(?:DASH|HYPHEN|MINUS)\s*/gi, "-");
+  s = s.replace(/DASH/gi, "-");
+  s = s.replace(/[^A-Z0-9-]/g, "");
+  s = s.replace(/-+/g, "-");
+  return s;
 }
 
 function normalizeSpokenBookingCode(input: string) {
