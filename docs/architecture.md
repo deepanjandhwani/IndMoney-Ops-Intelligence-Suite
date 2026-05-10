@@ -71,6 +71,7 @@ flowchart TD
 - **Outputs:** Tentative booking code, secure details link, advisor calendar hold, Google Sheet row, advisor email draft, HITL record
 - **Integrations:** Google Calendar via FastMCP, Google Sheets via FastMCP, Gmail via FastMCP, Deepgram (STT for voice — See ADR-004), App DB
 - **Access:** Customer (chat + voice booking), Admin (scheduler preview)
+- **Customer UI alignment:** The standalone scheduler page (`/customer/scheduler`) and the unified FAQ sidebar (“Speak to an Advisor”) share the same **tap-to-start** / **deferred greeting** flow: greeting `GET` plus history logging can run while “Preparing advisor voice…” shows. **Tap to start stays enabled during that fetch**; an early tap shows **Starting advisor…** until the payload returns, then TTS proceeds. Freetext, mic, and slots stay blocked until the greeting is ready. Interrupt with text/voice/slot follows `voiceAgent.md` §4.4 flush rules (`src/lib/advisor-voice-gate.ts`).
 
 ### Module E — Human-in-the-Loop Approval Center
 

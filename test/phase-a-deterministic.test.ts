@@ -177,23 +177,28 @@ describe("intent pivot from time_collection", () => {
     expect(["slot_selection", "offer_waitlist"]).toContain(result.context.state);
   });
 
-  it("'any slots for tomorrow?' pivots to check_availability", async () => {
+  it("'any slots for tomorrow?' stays in booking flow and keeps topic", async () => {
     const { deps } = testDeps();
     const start = await processSchedulerMessage("book an advisor call", undefined, deps);
     const topic = await processSchedulerMessage("1", start.context, deps);
     expect(topic.context.state).toBe("time_collection");
+    expect(topic.context.topic).toBe("KYC / Onboarding");
 
     const result = await processSchedulerMessage("any slots for tomorrow?", topic.context, deps);
-    expect(result.context.intent).toBe("check_availability");
+    expect(result.context.intent).toBe("book_new");
+    expect(result.context.topic).toBe("KYC / Onboarding");
+    expect(["slot_selection", "offer_waitlist"]).toContain(result.context.state);
   });
 
-  it("'check availability for Monday' pivots to check_availability", async () => {
+  it("'check availability for Monday' stays in booking flow when topic already chosen", async () => {
     const { deps } = testDeps();
     const start = await processSchedulerMessage("book an advisor call", undefined, deps);
     const topic = await processSchedulerMessage("1", start.context, deps);
 
     const result = await processSchedulerMessage("check availability for Monday", topic.context, deps);
-    expect(result.context.intent).toBe("check_availability");
+    expect(result.context.intent).toBe("book_new");
+    expect(result.context.topic).toBe("KYC / Onboarding");
+    expect(["slot_selection", "offer_waitlist"]).toContain(result.context.state);
   });
 
   it("pure date input stays in booking flow (no intent match)", async () => {

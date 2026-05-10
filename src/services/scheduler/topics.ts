@@ -59,6 +59,38 @@ function matchOrdinalIndex(text: string, maxOptions: number): number | null {
   return null;
 }
 
+/**
+ * Heuristic: user is narrowing a day/time (continuation of booking), not asking for generic browse.
+ * Used so bare "slots" / "times" + a date cue does not become check_availability and wipe an active topic.
+ */
+export function looksLikeScheduleDatePreference(lower: string): boolean {
+  if (
+    /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december)\b/i.test(
+      lower
+    )
+  ) {
+    return true;
+  }
+  if (/\b\d{1,2}(st|nd|rd|th)?\b/.test(lower)) {
+    return true;
+  }
+  if (
+    /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|today|tomorrow|weekend)\b/.test(lower)
+  ) {
+    return true;
+  }
+  if (/\b(morning|afternoon|evening|night|noon)\b/.test(lower)) {
+    return true;
+  }
+  if (/\b(next|this)\s+(week|month|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/.test(lower)) {
+    return true;
+  }
+  if (/\b(ist|gmt|timezone)\b/.test(lower)) {
+    return true;
+  }
+  return false;
+}
+
 export function classifySchedulerIntent(input: string): SchedulerIntent | "advice" | "unclear" {
   const lower = input.toLowerCase();
 
@@ -78,7 +110,16 @@ export function classifySchedulerIntent(input: string): SchedulerIntent | "advic
   if (/\b(book|booking|schedule|advisor|appointment|meeting|call)\b/.test(lower)) {
     return "book_new";
   }
-  if (/\b(available|availability|free slots?|slots?|timings?|times?)\b/.test(lower)) {
+  // Strong browse cues (keep explicit "availability" / "free slot" as browse).
+  if (/\b(available|availability|free slots?)\b/.test(lower)) {
+    return "check_availability";
+  }
+  // Bare "slot(s)" / timings / times: if they mention a day or time window, treat as unclear so the
+  // state handler (e.g. time_collection) can parse — avoids false pivot that clears topic.
+  if (/\b(slots?|timings?|times?)\b/.test(lower)) {
+    if (looksLikeScheduleDatePreference(lower)) {
+      return "unclear";
+    }
     return "check_availability";
   }
 

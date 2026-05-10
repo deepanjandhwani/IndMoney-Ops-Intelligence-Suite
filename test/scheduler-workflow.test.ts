@@ -137,14 +137,15 @@ describe("Phase 5 scheduler workflow", () => {
     expect(slots.context.topic).toBe("KYC / Onboarding");
   });
 
-  it("pivots intent when user says 'any slots' during time collection", async () => {
+  it("keeps book_new and topic when user says 'any slots' during time collection", async () => {
     const { deps } = testDeps();
     const start = await processSchedulerMessage("book an advisor call", undefined, deps);
     const topic = await processSchedulerMessage("1", start.context, deps);
     expect(topic.context.state).toBe("time_collection");
 
     const pivot = await processSchedulerMessage("Any slots for tomorrow?", topic.context, deps);
-    expect(pivot.context.intent).toBe("check_availability");
+    expect(pivot.context.intent).toBe("book_new");
+    expect(pivot.context.topic).toBe("KYC / Onboarding");
   });
 
   it("rejects past dates before reading availability", async () => {

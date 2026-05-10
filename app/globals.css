@@ -1271,6 +1271,22 @@ button.secondary {
   padding: 28px 20px;
 }
 
+.advisor-voice-gate--tap-preparing {
+  gap: 14px;
+}
+
+.advisor-tap-preparing-row {
+  margin-bottom: 4px;
+  width: 100%;
+}
+
+.advisor-voice-gate--tap-preparing .advisor-tap-to-start:disabled {
+  animation: none;
+  cursor: not-allowed;
+  filter: grayscale(0.3);
+  opacity: 0.72;
+}
+
 .advisor-tap-to-start--circle {
   align-items: center;
   border-radius: 50%;

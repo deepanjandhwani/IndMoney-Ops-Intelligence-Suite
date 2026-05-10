@@ -5,9 +5,20 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { RefreshCw } from "lucide-react";
 
 import type { AssistantSessionEventRow } from "@/adapters/supabase/assistant-history-repository";
+import {
+  resolveStandaloneDeferredGreetingFlush,
+  type StandaloneAdvisorVoiceGate,
+  type UnifiedAdvisorVoiceGate
+} from "@/lib/advisor-voice-gate";
 import { notifyCustomerPendingBookingsChanged } from "@/lib/customer-pending-bookings";
 import { SchedulerOutput, SchedulerSessionContext, SlotOption } from "@/services/scheduler/types";
 import { useAssistantHistory, type AssistantHistorySessionSummary } from "@/ui/useAssistantHistory";
+
+type SchedulerChatGreetingResponse = SchedulerOutput & {
+  tts_audio_base64?: string | null;
+  tts_content_type?: string;
+  tts_text?: string;
+};
 
 type Citation = {
   source_url: string | null;
@@ -65,12 +76,11 @@ const schedulerStates = new Set([
 ]);
 
 type AdvisorGreetingTtsPayload = {
+  response_text: string;
   tts_audio_base64: string | null;
   tts_content_type: string;
   tts_text: string;
 };
-
-type AdvisorVoiceGate = "off" | "fetching" | "awaiting_tap" | "playing";
 
 /**
  * Strips the "HDFC " prefix and trailing "Direct …" suffix for display
@@ -291,19 +301,84 @@ export function UnifiedCustomerAssistantClient() {
   const [showAdvisorToast, setShowAdvisorToast] = useState(false);
   const advisorToastShownRef = useRef(false);
   const [trendingThemes, setTrendingThemes] = useState<string[]>([]);
-  const [advisorVoiceGate, setAdvisorVoiceGate] = useState<AdvisorVoiceGate>("off");
-  const advisorVoiceGateRef = useRef<AdvisorVoiceGate>("off");
+  const [advisorVoiceGate, setAdvisorVoiceGate] = useState<UnifiedAdvisorVoiceGate>("off");
+  const advisorVoiceGateRef = useRef<UnifiedAdvisorVoiceGate>("off");
   const advisorGreetingTtsRef = useRef<AdvisorGreetingTtsPayload | null>(null);
+  const tapPendingWhileFetchRef = useRef(false);
 
   useEffect(() => {
     advisorVoiceGateRef.current = advisorVoiceGate;
   }, [advisorVoiceGate]);
 
-  function dismissAdvisorVoiceTapGate() {
-    if (advisorVoiceGateRef.current !== "awaiting_tap") return;
+  function startUnifiedGreetingPlaybackFromStoredPayload(): void {
+    const payload = advisorGreetingTtsRef.current;
+    if (!payload) return;
+    const { response_text: revealText, tts_audio_base64, tts_content_type, tts_text } = payload;
+    setAdvisorVoiceGate("playing");
+    playTtsWithSpeakStarted(
+      tts_audio_base64,
+      tts_content_type,
+      tts_text,
+      () => {
+        setMessages((current) => [
+          ...current,
+          {
+            role: "assistant",
+            lane: "scheduler",
+            text: revealText,
+            id: `greeting-${Date.now()}-${current.length}`
+          }
+        ]);
+        setAdvisorVoiceGate("off");
+        advisorGreetingTtsRef.current = null;
+      }
+    );
+  }
+
+  function ingestUnifiedAdvisorGreeting(greeting: SchedulerChatGreetingResponse): void {
+    setSchedulerContext(greeting.context);
+    history.appendEvent({
+      role: "assistant",
+      lane: "scheduler",
+      kind: "scheduler_out",
+      content: greeting.response_text,
+      scheduler_state: greeting.context.state
+    });
+    advisorGreetingTtsRef.current = {
+      response_text: greeting.response_text,
+      tts_audio_base64: greeting.tts_audio_base64 ?? null,
+      tts_content_type: greeting.tts_content_type ?? "audio/mpeg",
+      tts_text: greeting.tts_text ?? greeting.response_text
+    };
+    const playNow = tapPendingWhileFetchRef.current;
+    tapPendingWhileFetchRef.current = false;
+    if (playNow) {
+      startUnifiedGreetingPlaybackFromStoredPayload();
+    } else {
+      setAdvisorVoiceGate("awaiting_tap");
+    }
+  }
+
+  const flushUnifiedDeferredAdvisorGreetingToThread = useCallback(() => {
+    const payload = advisorGreetingTtsRef.current;
+    const resolved = resolveStandaloneDeferredGreetingFlush(
+      advisorVoiceGateRef.current as StandaloneAdvisorVoiceGate,
+      payload ? { response_text: payload.response_text } : null
+    );
+    if (!resolved.flush) return;
     advisorGreetingTtsRef.current = null;
     setAdvisorVoiceGate("off");
-  }
+    const revealText = resolved.greetingText;
+    setMessages((current) => [
+      ...current,
+      {
+        role: "assistant" as const,
+        lane: "scheduler" as const,
+        text: revealText,
+        id: `${Date.now()}-${current.length}`
+      }
+    ]);
+  }, []);
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -326,7 +401,7 @@ export function UnifiedCustomerAssistantClient() {
   const handleVoiceTurnResult = useCallback((result: VoiceTurnResult) => {
     lastInputWasVoiceRef.current = true;
 
-    dismissAdvisorVoiceTapGate();
+    flushUnifiedDeferredAdvisorGreetingToThread();
 
     appendMessage({ role: "user", lane: "assistant", text: result.transcript });
     history.appendEvent({
@@ -381,7 +456,7 @@ export function UnifiedCustomerAssistantClient() {
       notifyCustomerPendingBookingsChanged();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [flushUnifiedDeferredAdvisorGreetingToThread]);
 
   const voice = useVoiceInput({
     schedulerContext,
@@ -446,6 +521,7 @@ export function UnifiedCustomerAssistantClient() {
       setSchedulerContext(undefined);
       setAdvisorVoiceGate("off");
       advisorGreetingTtsRef.current = null;
+      tapPendingWhileFetchRef.current = false;
       setMessages(eventsToAssistantMessages(events));
       setViewingReadonly(true);
       readonlySourceSessionIdRef.current = sessionId;
@@ -470,6 +546,7 @@ export function UnifiedCustomerAssistantClient() {
     setSchedulerContext(undefined);
     setAdvisorVoiceGate("off");
     advisorGreetingTtsRef.current = null;
+    tapPendingWhileFetchRef.current = false;
     setViewingReadonly(false);
     readonlySourceSessionIdRef.current = null;
     setError(null);
@@ -491,6 +568,7 @@ export function UnifiedCustomerAssistantClient() {
     setSchedulerContext(undefined);
     setAdvisorVoiceGate("off");
     advisorGreetingTtsRef.current = null;
+    tapPendingWhileFetchRef.current = false;
     setViewingReadonly(false);
     readonlySourceSessionIdRef.current = null;
     liveMessagesRef.current = [];
@@ -538,14 +616,14 @@ export function UnifiedCustomerAssistantClient() {
       return;
     }
     const trimmed = rawText.trim();
-    if (!trimmed || loading || advisorVoiceGate === "playing") {
+    if (!trimmed || loading || advisorVoiceGate === "playing" || advisorVoiceGate === "awaiting_tap_preparing" || advisorVoiceGate === "tap_pending_greeting_fetch") {
       return;
     }
     const effectiveText = trimmed;
     const shown = (displayText ?? rawText).trim() || effectiveText;
 
     setError(null);
-    dismissAdvisorVoiceTapGate();
+    flushUnifiedDeferredAdvisorGreetingToThread();
     appendMessage({
       role: "user",
       lane: "assistant",
@@ -568,6 +646,7 @@ export function UnifiedCustomerAssistantClient() {
         setSchedulerContext(undefined);
         setAdvisorVoiceGate("off");
         advisorGreetingTtsRef.current = null;
+        tapPendingWhileFetchRef.current = false;
         if (looksLikeFaqIntent(effectiveText) || /\b(question|faq|fund|scheme|fee|nav)\b/i.test(effectiveText)) {
           await sendFaqQuestion(effectiveText);
         } else {
@@ -732,7 +811,7 @@ export function UnifiedCustomerAssistantClient() {
   }
 
   async function sendSchedulerMessage(messageText: string) {
-    dismissAdvisorVoiceTapGate();
+    flushUnifiedDeferredAdvisorGreetingToThread();
 
     let currentContext = schedulerContext;
 
@@ -829,56 +908,31 @@ export function UnifiedCustomerAssistantClient() {
     if (viewingReadonly) {
       return;
     }
-    setLoading(true);
     setError(null);
-    setAdvisorVoiceGate("fetching");
+    tapPendingWhileFetchRef.current = false;
+    setAdvisorVoiceGate("awaiting_tap_preparing");
     advisorGreetingTtsRef.current = null;
     try {
       const greetRes = await fetch("/api/scheduler/message?mode=chat");
       if (!greetRes.ok) throw new Error("Could not start advisor session.");
-      const greeting = (await greetRes.json()) as SchedulerOutput & { tts_audio_base64?: string | null; tts_content_type?: string; tts_text?: string };
-      setSchedulerContext(greeting.context);
-      appendMessage({
-        role: "assistant",
-        lane: "scheduler",
-        text: greeting.response_text
-      });
-      history.appendEvent({
-        role: "assistant",
-        lane: "scheduler",
-        kind: "scheduler_out",
-        content: greeting.response_text,
-        scheduler_state: greeting.context.state
-      });
-      advisorGreetingTtsRef.current = {
-        tts_audio_base64: greeting.tts_audio_base64 ?? null,
-        tts_content_type: greeting.tts_content_type ?? "audio/mpeg",
-        tts_text: greeting.tts_text ?? greeting.response_text
-      };
-      setAdvisorVoiceGate("awaiting_tap");
+      const greeting = (await greetRes.json()) as SchedulerChatGreetingResponse;
+      ingestUnifiedAdvisorGreeting(greeting);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Assistant request failed.");
       setAdvisorVoiceGate("off");
       advisorGreetingTtsRef.current = null;
-    } finally {
-      setLoading(false);
+      tapPendingWhileFetchRef.current = false;
     }
   }
 
   const handleAdvisorTapToStart = useCallback(() => {
+    if (advisorVoiceGate === "awaiting_tap_preparing") {
+      tapPendingWhileFetchRef.current = true;
+      setAdvisorVoiceGate("tap_pending_greeting_fetch");
+      return;
+    }
     if (advisorVoiceGate !== "awaiting_tap") return;
-    const payload = advisorGreetingTtsRef.current;
-    if (!payload) return;
-    setAdvisorVoiceGate("playing");
-    playTtsWithSpeakStarted(
-      payload.tts_audio_base64,
-      payload.tts_content_type,
-      payload.tts_text,
-      () => {
-        setAdvisorVoiceGate("off");
-        advisorGreetingTtsRef.current = null;
-      }
-    );
+    startUnifiedGreetingPlaybackFromStoredPayload();
   }, [advisorVoiceGate]);
 
   function appendMessage(message: Omit<AssistantMessage, "id">) {
@@ -898,6 +952,7 @@ export function UnifiedCustomerAssistantClient() {
     setSchedulerContext(undefined);
     setAdvisorVoiceGate("off");
     advisorGreetingTtsRef.current = null;
+    tapPendingWhileFetchRef.current = false;
     appendMessage({
       role: "assistant",
       lane: "assistant",
@@ -919,7 +974,7 @@ export function UnifiedCustomerAssistantClient() {
             <button
               type="button"
               className="booking-card-primary"
-              disabled={loading || viewingReadonly}
+              disabled={loading || viewingReadonly || advisorVoiceGate !== "off"}
               onClick={() => beginAdvisorBooking()}
             >
               Speak to an Advisor
@@ -1090,7 +1145,13 @@ export function UnifiedCustomerAssistantClient() {
                         type="button"
                         className="slot-card"
                         key={slot.id}
-                        disabled={viewingReadonly}
+                        disabled={
+                          viewingReadonly ||
+                          loading ||
+                          advisorVoiceGate === "playing" ||
+                          advisorVoiceGate === "awaiting_tap_preparing" ||
+                          advisorVoiceGate === "tap_pending_greeting_fetch"
+                        }
                         onClick={() => routeMessage(slot.id, `Slot ${slot.id}: ${slot.label}`)}
                       >
                         <span>Option {slot.id}</span>
@@ -1167,23 +1228,48 @@ export function UnifiedCustomerAssistantClient() {
                 ) : null}
               </article>
             ))}
-            {!viewingReadonly && advisorVoiceGate === "awaiting_tap" ? (
-              <div className="advisor-voice-gate" role="region" aria-label="Start advisor voice">
+            {!viewingReadonly && advisorVoiceGate === "tap_pending_greeting_fetch" ? (
+              <div
+                className="advisor-voice-gate advisor-voice-gate--processing advisor-voice-gate--animated"
+                role="status"
+                aria-live="polite"
+              >
+                <span className="advisor-voice-spinner" aria-hidden />
+                Starting advisor…
+              </div>
+            ) : null}
+            {!viewingReadonly &&
+            (advisorVoiceGate === "awaiting_tap_preparing" || advisorVoiceGate === "awaiting_tap") ? (
+              <div
+                className={`advisor-voice-gate advisor-voice-gate--animated advisor-voice-gate--tap-only${
+                  advisorVoiceGate === "awaiting_tap_preparing" ? " advisor-voice-gate--tap-preparing" : ""
+                }`}
+                role="region"
+                aria-label="Start advisor voice"
+              >
+                {advisorVoiceGate === "awaiting_tap_preparing" ? (
+                  <div className="advisor-voice-gate--processing advisor-tap-preparing-row" aria-live="polite">
+                    <span className="advisor-voice-spinner" aria-hidden />
+                    <span>Preparing advisor voice…</span>
+                  </div>
+                ) : null}
                 <button
                   type="button"
-                  className="advisor-tap-to-start"
+                  className="advisor-tap-to-start advisor-tap-to-start--circle"
                   onClick={handleAdvisorTapToStart}
                 >
                   Tap to start
                 </button>
-                <p className="advisor-voice-gate-hint">
-                  Tap to hear the greeting aloud. You can also type a reply below.
-                </p>
+                {advisorVoiceGate === "awaiting_tap" ? (
+                  <p className="advisor-voice-gate-hint">
+                    Tap to hear the greeting aloud. You can also type a reply below.
+                  </p>
+                ) : null}
               </div>
             ) : null}
             {!viewingReadonly && advisorVoiceGate === "playing" ? (
               <div
-                className="advisor-voice-gate advisor-voice-gate--processing"
+                className="advisor-voice-gate advisor-voice-gate--processing advisor-voice-gate--animated"
                 role="status"
                 aria-live="polite"
               >
@@ -1231,7 +1317,9 @@ export function UnifiedCustomerAssistantClient() {
                     ? "Type your reply or hold the mic\u2026"
                     : "Ask about a fund or use Speak to an Advisor\u2026"
                 }
-                disabled={loading || viewingReadonly || advisorVoiceGate === "playing"}
+                disabled={
+                  loading || viewingReadonly || advisorVoiceGate === "playing" || advisorVoiceGate === "awaiting_tap_preparing" || advisorVoiceGate === "tap_pending_greeting_fetch"
+                }
                 autoComplete="off"
               />
               {voice.supported && activeScheduler ? (
@@ -1240,7 +1328,14 @@ export function UnifiedCustomerAssistantClient() {
                   className={`secondary faq-mic-button${voice.recording ? " faq-mic-button--listening" : ""}${voice.processing ? " faq-mic-button--processing" : ""}`}
                   aria-label={voice.recording ? "Release to send" : voice.processing ? "Processing voice\u2026" : "Hold to speak"}
                   title={voice.recording ? "Release to send" : voice.processing ? "Processing\u2026" : "Hold to speak"}
-                  disabled={loading || viewingReadonly || voice.processing || advisorVoiceGate === "playing"}
+                  disabled={
+                    loading ||
+                    viewingReadonly ||
+                    voice.processing ||
+                    advisorVoiceGate === "playing" ||
+                    advisorVoiceGate === "awaiting_tap_preparing" ||
+                    advisorVoiceGate === "tap_pending_greeting_fetch"
+                  }
                   onPointerDown={(e) => { e.preventDefault(); voice.startRecording(); }}
                   onPointerUp={() => voice.stopRecording()}
                   onPointerLeave={() => { if (voice.recording) voice.stopRecording(); }}
@@ -1251,7 +1346,7 @@ export function UnifiedCustomerAssistantClient() {
               ) : null}
               <button
                 type="submit"
-                disabled={loading || viewingReadonly || advisorVoiceGate === "playing" || !text.trim()}
+                disabled={loading || viewingReadonly || advisorVoiceGate === "playing" || advisorVoiceGate === "awaiting_tap_preparing" || advisorVoiceGate === "tap_pending_greeting_fetch" || !text.trim()}
               >
                 {activeScheduler ? "Send" : "Ask"}
               </button>

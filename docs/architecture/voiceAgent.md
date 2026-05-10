@@ -432,12 +432,28 @@ function buildGreeting(themes: string[], inputMode: "chat" | "voice"): string {
 1. Themes are **never forced** — the customer can choose any intent or topic regardless of trending themes.
 2. Maximum **3 themes** displayed in greeting (even if the pulse has 5).
 3. If no pulse exists (first run, no reviews yet), the greeting omits the theme sentence entirely.
-4. The greeting is identical for chat and voice — only the delivery mechanism differs (text bubble vs TTS).
+4. The greeting **copy** is identical for chat and voice — delivery differs: standalone scheduler and unified “Speak to an Advisor” defer the visible chat bubble until **Tap to start** (voice path) or the first user text/voice/slot selection (**deferred greeting flush**), while `GET /api/scheduler/message?mode=chat` plus history logging can run earlier. Plain chat-first entry (scheduler without tap gate, e.g. typing a scheduling intent before opening voice) still shows the greeting as a bubble immediately once returned.
 5. The informational-support disclaimer is **always** present.
 
-### 4.4 Voice-Specific Greeting Behavior
+### 4.4 Customer UI — Deferred greeting & Tap to start
 
-For voice mode, the greeting is spoken via Browser SpeechSynthesis immediately when the voice session starts. The user hears the greeting and can respond verbally. The system listens for the response via Deepgram STT.
+The **standalone** advisor page (`SchedulerClient.tsx`, route `/customer/scheduler`) and the **unified** assistant (`UnifiedCustomerAssistantClient.tsx`, “Speak to an Advisor”) share the same gate machine:
+
+| Gate state | Visible UI | Blocking |
+|---|---|---|
+| `awaiting_tap_preparing` | “Preparing advisor voice…” + **Tap to start enabled** | Chat input, mic, slot clicks, Speak CTA — user can tap early; fetch still in flight |
+| `tap_pending_greeting_fetch` | Same **Starting advisor…** spinner as playback handshake (tap arrived before `GET` finished) | Same as preparing — no text/mic/slots until greeting payload exists and playback starts |
+| `awaiting_tap` | **Tap to start** (greeting ready, not yet played) | User can tap for TTS, or send first text/voice/slot selection — see flush below |
+| `playing` | “Starting advisor…” spinner | Inputs disabled while initial playback handshake runs |
+| `off` | No strip | Normal advisor session |
+
+**Initial fetch:** `GET /api/scheduler/message?mode=chat` returns greeting text, context, optional Deepgram TTS. The transcript can append an assistant-history event (`scheduler_out`) immediately; **the visible greeting bubble waits** until Tap to start confirms playback gesture or until the deferred flush fires.
+
+**Deferred flush (`resolveStandaloneDeferredGreetingFlush` in `src/lib/advisor-voice-gate.ts`):** If the gate is `awaiting_tap` with a stored payload and the user **types**, **releases a voice capture**, or **clicks a slot**, the helper appends the greeting as an assistant **scheduler** message once, clears the stash, sets gate **`off`**, so the mid-thread order stays coherent.
+
+**Important:** Flush does **not** run during `awaiting_tap_preparing` or `tap_pending_greeting_fetch` (stash may still be loading); UX blocks freetext/slot/mic instead.
+
+Follow-up advisor voice turns continue to use Deepgram (/browser fallback) via `/api/scheduler/voice-turn` then normal TTS; they are unaffected by Tap to start beyond the greeting handoff above.
 
 ---
 
@@ -1031,7 +1047,7 @@ interface ModeSwitch {
 - Voice mode requires explicit opt-in (user clicks microphone button).
 - Chat is always available as the default and fallback.
 - TTS can be muted without affecting STT.
-- All voice responses are simultaneously displayed as text in the chat panel.
+- All voice responses are simultaneously displayed as text in the chat panel (initial advisor greeting bubble appears **after tap or deferred flush**, not while the greeting is only in history — see §4.4).
 
 ---
 
@@ -1069,7 +1085,11 @@ app/api/scheduler/
 │   └── route.ts               # HTTP POST endpoint for voice (ADR-024)
 
 src/ui/
-├── UnifiedCustomerAssistantClient.tsx  # Unified chat + voice UI
+├── SchedulerClient.tsx                # Standalone advisor chat + voice + tap gate
+├── UnifiedCustomerAssistantClient.tsx  # Unified FAQ + “Speak to an Advisor” (same tap gate)
+
+src/lib/
+├── advisor-voice-gate.ts                # Deferred greeting flush (standalone + unified)
 ```
 
 ---

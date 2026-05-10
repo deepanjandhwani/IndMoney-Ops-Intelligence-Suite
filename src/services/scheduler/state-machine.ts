@@ -1183,6 +1183,16 @@ async function trySchedulerIntentPivot(
     return null;
   }
 
+  // Active booking: do not pivot to browse; keeps topic + book_new so date/slot phrasing is not misrouted.
+  if (
+    classified === "check_availability" &&
+    context.intent === "book_new" &&
+    context.topic &&
+    (context.state === "time_collection" || context.state === "slot_selection")
+  ) {
+    return null;
+  }
+
   const sameIntent =
     classified === context.intent &&
     classified !== "what_to_prepare" &&
@@ -1306,7 +1316,6 @@ async function trySchedulerIntentPivot(
       ...context,
       intent: "check_availability",
       state: "time_collection",
-      topic: undefined,
       selected_slot: undefined,
       slots_offered: undefined,
       retry_count: 0
@@ -1320,7 +1329,6 @@ async function trySchedulerIntentPivot(
       preferred_date: time.preferredDate,
       requested_day_label: time.requestedDayLabel,
       time_window: time.timeWindow,
-      topic: undefined,
       selected_slot: undefined,
       slots_offered: undefined,
       retry_count: 0
