@@ -138,9 +138,28 @@ All variables are documented in `.env.example`. Key groups:
 
 ### Review Ingestion & Pulse (`.github/workflows/review_ingestion.yml`)
 
-Runs weekly on Monday at 2:00 AM UTC. Ingests Google Play reviews, runs BERTopic clustering, and generates the Review Pulse. Can also be triggered manually via `workflow_dispatch`.
+Runs weekly on Monday at 2:00 AM UTC. Ingests Google Play reviews, runs BERTopic clustering, and generates the Review Pulse. Can also be triggered manually via `workflow_dispatch`, or via the GitHub API using `repository_dispatch` event type `review-ingestion-weekly` (see below).
 
 **Required secrets:** `GH_SUPABASE_URL`, `GH_SUPABASE_SERVICE_ROLE_KEY`, `GH_GEMINI_API_KEY`
+
+**Ensure the cron actually runs on GitHub**
+
+1. **Actions enabled:** **Settings → Actions → General** — workflows must be allowed. On **forks**, open the **Actions** tab first and confirm workflows are not blocked.
+2. **Default branch:** Scheduled runs use the workflow file on the **default branch** (`main`). Merge changes there.
+3. **Verify:** After Monday 02:00 UTC, **Actions** should list a run triggered by **`schedule`**. If only **Manually run** or **`repository_dispatch`** appears, the cron still is not active for that repo.
+
+**If `schedule` never fires** (common on forks until Actions are fully enabled): use **Run workflow** anytime, or trigger the same pipeline weekly from outside GitHub at Monday 02:00 UTC with a classic PAT (`repo`) or fine-grained token with **Contents: Read and write** on this repository:
+
+```bash
+curl -L -X POST \
+  -H "Accept: application/vnd.github+json" \
+  -H "Authorization: Bearer YOUR_GITHUB_TOKEN" \
+  -H "X-GitHub-Api-Version: 2022-11-28" \
+  https://api.github.com/repos/OWNER/REPO/dispatches \
+  -d '{"event_type":"review-ingestion-weekly"}'
+```
+
+Replace `OWNER`, `REPO`, and the token. **`workflow_dispatch`** can be used the same way with the [workflow dispatch REST API](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event) if you prefer that over `repository_dispatch`.
 
 ### Smart-Sync RAG Refresh (`.github/workflows/rag_refresh.yml`)
 

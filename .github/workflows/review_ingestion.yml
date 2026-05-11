@@ -1,9 +1,19 @@
 name: Review Ingestion And Pulse
 
+# One run at a time so overlapping schedule + manual/API triggers do not clash.
+concurrency:
+  group: review-ingestion-pulse
+  cancel-in-progress: false
+
 on:
   schedule:
-    - cron: "0 2 * * 1"
+    # Monday 02:00 UTC (= 07:30 IST). Uses MON so weekday is unambiguous in GitHub cron.
+    - cron: "0 2 * * MON"
   workflow_dispatch:
+  # Same job graph as schedule; use when `schedule` is disabled (e.g. some forks until Actions are fully enabled).
+  # POST /repos/{owner}/{repo}/dispatches with {"event_type":"review-ingestion-weekly"} and a PAT with repo access.
+  repository_dispatch:
+    types: [review-ingestion-weekly]
 
 jobs:
   review-pulse:

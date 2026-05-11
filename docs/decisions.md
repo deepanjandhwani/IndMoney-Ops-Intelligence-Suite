@@ -272,3 +272,10 @@ Reason: User reported "Can you go with the eleven 31?" failing to select slot 2 
 Alternative considered: Run Gemini on every scheduler turn (nextleap-voice-agent style) — rejected due to latency on voice and cost concerns. Conditional invocation keeps the happy path at 0 LLM calls.
 Cost: Free (same Gemini free tier; adds at most 1 LLM call when regex misses a slot choice)
 Date: 2026-05-07
+
+## ADR-029: Review ingestion workflow triggers (schedule + API dispatch)
+Decision: Keep **schedule** (`0 2 * * MON` — Monday 02:00 UTC). Add **`repository_dispatch`** with event type `review-ingestion-weekly` so the same jobs can be started via `POST .../repos/{owner}/{repo}/dispatches` when GitHub does not run `schedule` (e.g. fork until Actions are fully enabled). Add **`concurrency`** (`review-ingestion-pulse`, `cancel-in-progress: false`) so overlapping triggers do not run two full pipelines at once. Document enablement steps and optional external weekly curl in `README.md`.
+Reason: `workflow_dispatch` alone does not fix repositories where scheduled workflows never enqueue; an API trigger reuses identical steps without duplicating the workflow file.
+Alternative considered: Duplicate workflow file only for `repository_dispatch` — rejected to avoid drift; rely only on GitHub fixing fork settings — insufficient when the maintainer needs a guaranteed fallback.
+Cost: Free (PAT or external cron is user-operated; no new paid services)
+Date: 2026-05-11
