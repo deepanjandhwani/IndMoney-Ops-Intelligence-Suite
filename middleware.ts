@@ -11,7 +11,8 @@ export async function middleware(request: NextRequest) {
     pathname === "/customer" ||
     pathname.startsWith("/customer/my-bookings") ||
     pathname.startsWith("/customer/scheduler") ||
-    pathname.startsWith("/customer/faq");
+    pathname.startsWith("/customer/faq") ||
+    pathname.startsWith("/customer/chat-history");
   const isCustomerLogin = pathname === "/customer/login";
 
   if (!isAdminRoute && !isAdminApi && !isCustomerProtected) {
@@ -74,10 +75,22 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  if (isCustomerProtected && !user) {
-    const loginUrl = new URL("/customer/login", request.url);
-    loginUrl.searchParams.set("next", pathname);
-    return NextResponse.redirect(loginUrl);
+  if (isCustomerProtected) {
+    if (!user) {
+      const loginUrl = new URL("/customer/login", request.url);
+      loginUrl.searchParams.set("next", pathname);
+      return NextResponse.redirect(loginUrl);
+    }
+
+    const { data: customerGateProfile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+
+    if (customerGateProfile?.role === "admin") {
+      return NextResponse.redirect(new URL("/admin", request.url));
+    }
   }
 
   response.headers.set("Cache-Control", "no-store, max-age=0");
@@ -94,6 +107,8 @@ export const config = {
     "/customer/scheduler",
     "/customer/scheduler/:path*",
     "/customer/faq",
-    "/customer/faq/:path*"
+    "/customer/faq/:path*",
+    "/customer/chat-history",
+    "/customer/chat-history/:path*"
   ]
 };

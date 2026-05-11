@@ -1,12 +1,12 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { User, AlertCircle } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/adapters/supabase/browser-client";
+import { safeInternalNextPath } from "@/lib/internal-next-path";
 
 export function CustomerLoginClient() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -22,19 +22,26 @@ export function CustomerLoginClient() {
     setError(null);
 
     try {
+      const form = event.currentTarget;
+      const fd = new FormData(form);
+      const emailField = String(fd.get("email") ?? "").trim() || email;
+      const passwordField = String(fd.get("password") ?? "") || password;
+      const nameField = String(fd.get("display_name") ?? "").trim() || displayName.trim();
+
       const supabase = createSupabaseBrowserClient();
 
       if (mode === "signup") {
-        const trimmedName = displayName.trim();
+        const trimmedName = nameField;
         const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-          email,
-          password,
+          email: emailField,
+          password: passwordField,
           options: { data: { display_name: trimmedName || undefined } }
         });
         if (signUpError) {
           setError(signUpError.message);
           return;
         }
+        setEmail(emailField);
         if (signUpData.user && trimmedName) {
           await supabase.from("profiles").upsert({
             id: signUpData.user.id,
@@ -43,31 +50,31 @@ export function CustomerLoginClient() {
         }
         // Auto-sign-in after signup (DB trigger auto-confirms the email)
         const { error: signInError } = await supabase.auth.signInWithPassword({
-          email,
-          password
+          email: emailField,
+          password: passwordField
         });
         if (signInError) {
           setSignupSuccess(true);
           return;
         }
-        const next = searchParams.get("next") ?? "/customer/my-bookings";
-        router.push(next);
-        router.refresh();
+        await supabase.auth.getSession();
+        const next = safeInternalNextPath(searchParams.get("next"), "/customer/my-bookings");
+        window.location.assign(next);
         return;
       }
 
       const { error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password
+        email: emailField,
+        password: passwordField
       });
       if (authError) {
         setError(authError.message);
         return;
       }
 
-      const next = searchParams.get("next") ?? "/customer/my-bookings";
-      router.push(next);
-      router.refresh();
+      await supabase.auth.getSession();
+      const next = safeInternalNextPath(searchParams.get("next"), "/customer/my-bookings");
+      window.location.assign(next);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -130,9 +137,11 @@ export function CustomerLoginClient() {
               </label>
               <input
                 id="customer-name"
+                name="display_name"
                 type="text"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
+                autoComplete="name"
                 className="w-full !bg-card-soft !border !border-border !rounded-lg !px-3 !py-2.5 !text-sm !text-foreground"
                 placeholder="e.g. Deepanjan"
               />
@@ -144,9 +153,11 @@ export function CustomerLoginClient() {
             </label>
             <input
               id="customer-email"
+              name="email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              autoComplete="username"
               required
               className="w-full !bg-card-soft !border !border-border !rounded-lg !px-3 !py-2.5 !text-sm !text-foreground"
               placeholder="you@example.com"
@@ -158,9 +169,11 @@ export function CustomerLoginClient() {
             </label>
             <input
               id="customer-password"
+              name="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              autoComplete={mode === "signup" ? "new-password" : "current-password"}
               required
               minLength={6}
               className="w-full !bg-card-soft !border !border-border !rounded-lg !px-3 !py-2.5 !text-sm !text-foreground"

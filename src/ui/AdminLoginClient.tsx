@@ -1,15 +1,15 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { ShieldCheck, AlertCircle } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/adapters/supabase/browser-client";
+import { safeInternalNextPath } from "@/lib/internal-next-path";
 
 const HARDCODED_ADMIN_EMAIL = "admin@gmail.com";
 const HARDCODED_ADMIN_PASSWORD = "admin1";
 
 export function AdminLoginClient() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState(HARDCODED_ADMIN_EMAIL);
   const [password, setPassword] = useState(HARDCODED_ADMIN_PASSWORD);
@@ -24,10 +24,15 @@ export function AdminLoginClient() {
     setError(null);
 
     try {
+      const form = event.currentTarget;
+      const fd = new FormData(form);
+      const emailField = String(fd.get("email") ?? "").trim() || email;
+      const passwordField = String(fd.get("password") ?? "") || password;
+
       const supabase = createSupabaseBrowserClient();
       const { error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password
+        email: emailField,
+        password: passwordField
       });
 
       if (authError) {
@@ -35,9 +40,10 @@ export function AdminLoginClient() {
         return;
       }
 
-      const next = searchParams.get("next") ?? "/admin";
-      router.push(next);
-      router.refresh();
+      await supabase.auth.getSession();
+
+      const next = safeInternalNextPath(searchParams.get("next"), "/admin");
+      window.location.assign(next);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -73,9 +79,11 @@ export function AdminLoginClient() {
             </label>
             <input
               id="admin-email"
+              name="email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              autoComplete="username"
               required
               className="w-full !bg-card-soft !border !border-border !rounded-lg !px-3 !py-2.5 !text-sm !text-foreground"
               placeholder="admin@example.com"
@@ -87,9 +95,11 @@ export function AdminLoginClient() {
             </label>
             <input
               id="admin-password"
+              name="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
               required
               className="w-full !bg-card-soft !border !border-border !rounded-lg !px-3 !py-2.5 !text-sm !text-foreground"
               placeholder="Enter password"
