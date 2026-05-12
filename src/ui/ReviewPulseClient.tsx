@@ -11,6 +11,7 @@ import {
   AlertCircle,
   TrendingUp
 } from "lucide-react";
+import { WeeklySummaryBody } from "@/ui/WeeklySummaryBody";
 
 type Theme = { theme: string; rank: number };
 type ActionIdea = { idea: string; based_on_theme: string; evidence: string };
@@ -218,13 +219,20 @@ export function ReviewPulseClient() {
           <FileText className="w-4 h-4 text-accent" />
           <h2 className="text-lg font-bold text-foreground">Weekly Summary</h2>
         </div>
-        <div className="bg-card border border-border rounded-2xl p-6">
-          <p
-            className="text-sm leading-relaxed text-foreground"
-            style={{ fontFamily: "Georgia, 'Times New Roman', serif" }}
-          >
-            {pulse.weekly_summary}
-          </p>
+        <div
+          className={`rounded-2xl border p-6 md:p-7 bg-gradient-to-br from-card via-card to-accent/[0.04] ${
+            pulse.average_rating < 3
+              ? "border-warning/40 shadow-[inset_0_0_0_1px_rgba(201,127,26,0.12)]"
+              : "border-border"
+          }`}
+        >
+          {pulse.average_rating < 3 ? (
+            <p className="mb-4 flex items-center gap-2 rounded-xl bg-warning/10 px-3 py-2 text-xs font-bold uppercase tracking-wide text-warning">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              Average rating {pulse.average_rating.toFixed(1)} — align narrative with theme cards above
+            </p>
+          ) : null}
+          <WeeklySummaryBody text={pulse.weekly_summary} />
         </div>
       </motion.div>
     </motion.div>

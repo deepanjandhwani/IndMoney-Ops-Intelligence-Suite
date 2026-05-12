@@ -15,6 +15,7 @@ import {
   CheckCircle2,
   XCircle
 } from "lucide-react";
+import { WeeklySummaryBody } from "@/ui/WeeklySummaryBody";
 
 type IngestionRun = {
   id: string;
@@ -195,7 +196,7 @@ export function AdminDashboardClient() {
               View full pulse <ArrowRight className="w-3 h-3" />
             </Link>
           </div>
-          <p className="text-sm leading-relaxed text-muted">{data.pulse.weekly_summary}</p>
+          <WeeklySummaryBody text={data.pulse.weekly_summary} className="max-h-[min(28rem,55vh)] overflow-y-auto pr-1" />
           <div className="flex flex-wrap gap-2">
             {data.pulse.top_customer_themes.map((t) => (
               <span
