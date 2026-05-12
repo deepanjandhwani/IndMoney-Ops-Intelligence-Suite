@@ -37,7 +37,7 @@ describe("createGooglePlayReviewFetcher", () => {
 
     const fetchReviews = createGooglePlayReviewFetcher({
       appId: "com.nextbillion.groww",
-      reviewLimit: 2
+      throttle: 4
     });
 
     const reviews = await fetchReviews({
@@ -58,8 +58,10 @@ describe("createGooglePlayReviewFetcher", () => {
       appId: "com.nextbillion.groww",
       country: "in",
       lang: "en",
-      num: 2,
-      sort: 2
+      sort: 2,
+      paginate: true,
+      nextPaginationToken: undefined,
+      throttle: 4
     });
   });
 });

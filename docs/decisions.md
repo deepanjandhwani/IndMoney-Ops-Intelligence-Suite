@@ -279,3 +279,10 @@ Reason: `workflow_dispatch` alone does not fix repositories where scheduled work
 Alternative considered: Duplicate workflow file only for `repository_dispatch` — rejected to avoid drift; rely only on GitHub fixing fork settings — insufficient when the maintainer needs a guaranteed fallback.
 Cost: Free (PAT or external cron is user-operated; no new paid services)
 Date: 2026-05-11
+
+## ADR-030: Rolling-window Google Play ingestion
+Decision: **`runReviewIngestion`** chooses fetch span by **`reviews` row count**: if zero (or **`REVIEW_INGESTION_FORCE_BACKFILL`**), ingest the full **`REVIEW_INGESTION_WINDOW_WEEKS`** (default 12) trailing window; otherwise ingest only **`REVIEW_INGESTION_RECURRING_WINDOW_WEEKS`** (default 1). The Google Play adapter paginates (**`paginate: true`**) newest-first until the oldest page review is before **`windowStart`**, respecting **`GOOGLE_PLAY_REVIEW_MAX_PAGES`** and **`GOOGLE_PLAY_REVIEW_THROTTLE`**. After each successful completion, **`REVIEW_INGESTION_PRUNE_OLD_REVIEWS`** (default true) deletes stored reviews with **`review_date`** strictly before the same rolling cutoff used for the pulse/cluster script. Review trends continue to use persisted **`review_pulse`** / **`theme_snapshots`**, not re-aggregated raw rows.
+Reason: Matches module spec (12-week initial backfill, weekly slice thereafter), bounds Supabase storage, and keeps clustering input aligned with a rolling 12-week dataset.
+Alternative considered: Keep re-fetching 12 weeks every run with a single 500-review call — rejected (misses depth and duplicates effort); never prune raw reviews — rejected for free-tier row growth.
+Cost: Free (same scraper + Supabase)
+Date: 2026-05-11

@@ -30,6 +30,18 @@ export function createSupabaseReviewIngestionRepository(
       return { id: data.id as string };
     },
 
+    async getStoredReviewCount() {
+      const { count, error } = await client
+        .from("reviews")
+        .select("*", { count: "exact", head: true });
+
+      if (error) {
+        throw new Error(`Failed to count reviews: ${error.message}`);
+      }
+
+      return count ?? 0;
+    },
+
     async getExistingReviewIds(reviewIds: string[]) {
       if (reviewIds.length === 0) {
         return new Set<string>();
@@ -73,6 +85,19 @@ export function createSupabaseReviewIngestionRepository(
       if (error) {
         throw new Error(`Failed to update ingestion run ${runId}: ${error.message}`);
       }
+    },
+
+    async deleteReviewsWithReviewDateBefore(cutoffIso: string) {
+      const { error, count } = await client
+        .from("reviews")
+        .delete({ count: "exact" })
+        .lt("review_date", cutoffIso);
+
+      if (error) {
+        throw new Error(`Failed to prune old reviews: ${error.message}`);
+      }
+
+      return count ?? 0;
     }
   };
 }

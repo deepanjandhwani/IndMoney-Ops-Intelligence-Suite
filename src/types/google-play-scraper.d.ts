@@ -5,6 +5,9 @@ declare module "google-play-scraper" {
     lang?: string;
     num?: number;
     sort?: number;
+    paginate?: boolean;
+    nextPaginationToken?: string | null;
+    throttle?: number;
   };
 
   export type Review = {

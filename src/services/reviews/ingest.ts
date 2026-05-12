@@ -12,17 +12,36 @@ export type RunReviewIngestionOptions = {
   fetchReviews: FetchReviews;
   repository: ReviewIngestionRepository;
   now?: Date;
-  windowWeeks?: number;
+  /** Rolling analysis / retention window (weeks). Pulse + prune use this. Default 12. */
+  rollingWindowWeeks?: number;
+  /** When the DB already has reviews, fetch only this many trailing weeks. Default 1. */
+  recurringFetchWeeks?: number;
+  /** Force full rolling-window fetch even if reviews exist (e.g. repair). */
+  forceBackfill?: boolean;
+  /** After success, delete reviews older than the rolling window. Default true. */
+  pruneOlderThanRollingWindow?: boolean;
 };
 
 export async function runReviewIngestion({
   fetchReviews,
   repository,
   now = new Date(),
-  windowWeeks = 12
+  rollingWindowWeeks = 12,
+  recurringFetchWeeks = 1,
+  forceBackfill = false,
+  pruneOlderThanRollingWindow = true
 }: RunReviewIngestionOptions): Promise<ReviewIngestionResult> {
+  const rollingWeeksRounded = sanitizeWeeks(rollingWindowWeeks, 12);
+  const recurringWeeksRounded = sanitizeWeeks(recurringFetchWeeks, 1);
+
+  const storedCount = await repository.getStoredReviewCount();
+  const ingestionMode =
+    forceBackfill || storedCount === 0 ? "initial_backfill" : "incremental_fetch";
+  const fetchWindowWeeks =
+    ingestionMode === "initial_backfill" ? rollingWeeksRounded : recurringWeeksRounded;
+
   const windowEnd = now;
-  const windowStart = subtractDays(windowEnd, windowWeeks * 7);
+  const windowStart = subtractDays(windowEnd, fetchWindowWeeks * 7);
   const nextScheduledRun = addDays(now, 7);
   const run = await repository.startIngestionRun({
     review_window_start: toDateOnly(windowStart),
@@ -63,6 +82,14 @@ export async function runReviewIngestion({
           : null
     });
 
+    const retentionCutoff = subtractDays(now, rollingWeeksRounded * 7);
+    let reviewsPruned: number | null = null;
+    if (pruneOlderThanRollingWindow) {
+      reviewsPruned = await repository.deleteReviewsWithReviewDateBefore(
+        retentionCutoff.toISOString()
+      );
+    }
+
     return {
       runId: run.id,
       status,
@@ -75,7 +102,11 @@ export async function runReviewIngestion({
       languageSkipped: prepared.languageSkipped,
       reviewsFailed: prepared.reviewsFailed,
       windowStart: toDateOnly(windowStart),
-      windowEnd: toDateOnly(windowEnd)
+      windowEnd: toDateOnly(windowEnd),
+      ingestionMode,
+      fetchWindowWeeks,
+      rollingWindowWeeks: rollingWeeksRounded,
+      reviewsPruned
     };
   } catch (error) {
     await repository.updateIngestionRun(run.id, {
@@ -88,6 +119,13 @@ export async function runReviewIngestion({
     });
     throw error;
   }
+}
+
+function sanitizeWeeks(value: number, fallback: number) {
+  if (!Number.isFinite(value) || value < 1) {
+    return fallback;
+  }
+  return Math.floor(value);
 }
 
 async function prepareStoredReviews(

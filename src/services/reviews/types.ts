@@ -36,9 +36,12 @@ export type IngestionRunPatch = {
 
 export type ReviewIngestionRepository = {
   startIngestionRun: (input: IngestionRunInput) => Promise<{ id: string }>;
+  getStoredReviewCount: () => Promise<number>;
   getExistingReviewIds: (reviewIds: string[]) => Promise<Set<string>>;
   insertReviews: (reviews: StoredReviewInput[]) => Promise<void>;
   updateIngestionRun: (runId: string, patch: IngestionRunPatch) => Promise<void>;
+  /** Delete reviews strictly before cutoff. Review embeddings cascade from reviews.id. */
+  deleteReviewsWithReviewDateBefore: (cutoffIso: string) => Promise<number>;
 };
 
 export type FetchReviewsOptions = {
@@ -61,4 +64,8 @@ export type ReviewIngestionResult = {
   reviewsFailed: number;
   windowStart: string;
   windowEnd: string;
+  ingestionMode: "initial_backfill" | "incremental_fetch";
+  fetchWindowWeeks: number;
+  rollingWindowWeeks: number;
+  reviewsPruned: number | null;
 };
